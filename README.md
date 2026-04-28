@@ -46,3 +46,4 @@ QR kód otevře stránku pro příjem/výdej dané položky. Po načtení mobile
 ## Poznámka k heslům
 
 Výchozí hesla jsou určena pouze pro první spuštění a testování. Pro ostré použití je vhodné doplnit správu uživatelů nebo hesla změnit přímo v databázi.
+"# sklad-app" 
