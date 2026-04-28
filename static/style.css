@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #f4f6f8; color: #1f2937; }
+header { background: #111827; color: white; padding: 16px; }
+header h1 { margin: 0 0 10px; font-size: 24px; }
+nav { display: flex; gap: 10px; flex-wrap: wrap; }
+nav a, .button-link { color: white; background: #2563eb; text-decoration: none; padding: 9px 12px; border-radius: 8px; display: inline-block; }
+main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+.flash { padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+.flash.success { background: #dcfce7; color: #166534; }
+.flash.error { background: #fee2e2; color: #991b1b; }
+.search { display: flex; gap: 8px; margin-bottom: 16px; }
+.search input { flex: 1; }
+input, select, button { font-size: 16px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
+button { background: #2563eb; color: white; border: 0; cursor: pointer; }
+.table-wrap { overflow-x: auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; }
+th { background: #f8fafc; }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.actions a { color: #2563eb; font-weight: bold; }
+.actions form { margin: 0; }
+.actions button { background: #dc2626; padding: 7px 10px; }
+.card-form { background: white; padding: 18px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); max-width: 560px; }
+.card-form label { display: block; margin-bottom: 12px; font-weight: bold; }
+.card-form input, .card-form select { width: 100%; margin-top: 5px; }
+.login-card, .mobile-card { max-width: 560px; margin: 20px auto; }
+.muted { color: #64748b; font-size: 14px; }
+.qr-small { width: 72px; height: 72px; }
+.qr-box img { width: 220px; max-width: 100%; background: white; border-radius: 12px; padding: 8px; }
+.card-detail { display: grid; grid-template-columns: 1fr 260px; gap: 16px; align-items: start; background: white; padding: 18px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); margin-bottom: 18px; }
+@media (max-width: 720px) {
+    header h1 { font-size: 20px; }
+    nav a { flex: 1 1 auto; text-align: center; }
+    .search { flex-direction: column; }
+    .card-detail { grid-template-columns: 1fr; }
+    th, td { padding: 8px; }
+}

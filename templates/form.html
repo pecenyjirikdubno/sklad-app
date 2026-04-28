@@ -1,0 +1,20 @@
+<h2>Přidat materiál</h2>
+
+<form method="post" class="form-card">
+    <label>ID výrobce</label>
+    <input name="manufacturer_id">
+
+    <label>Název</label>
+    <input name="name" required>
+
+    <label>Množství</label>
+    <input name="quantity" type="number" step="0.01" value="0">
+
+    <label>Mn.j.</label>
+    <input name="unit" placeholder="ks, m, kg...">
+
+    <label>Cena bez DPH</label>
+    <input name="price" type="number" step="0.01" value="0">
+
+    <button type="submit">Uložit</button>
+</form>

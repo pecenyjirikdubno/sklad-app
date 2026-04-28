@@ -1,0 +1,8 @@
+flask
+flask-sqlalchemy
+pandas
+openpyxl
+xlrd
+qrcode
+pillow
+psycopg2-binary

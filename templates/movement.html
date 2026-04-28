@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Pohyb materiálu {{ material.material_id }}</h2>
+
+<p><strong>{{ material.name }}</strong></p>
+<p>Aktuálně skladem: {{ material.quantity }} {{ material.unit }}</p>
+
+<form method="post">
+    <label>Typ pohybu</label>
+    <select name="type" required>
+        <option value="in">Příjem / naskladnit</option>
+        <option value="out">Výdej / vyskladnit</option>
+    </select>
+
+    <label>Množství</label>
+    <input type="number" step="0.01" name="quantity" required>
+
+    <button type="submit">Uložit pohyb</button>
+</form>
+
+<p><a href="{{ url_for('index') }}">Zpět na přehled</a></p>
+{% endblock %}

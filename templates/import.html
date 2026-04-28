@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Import položek z Excelu</h2>
+
+<p>Podporované formáty: <strong>.xlsx</strong> a <strong>.xls</strong>.</p>
+<p>Povinné sloupce: <strong>ID výrobce, Název, Množství, Mn.j., Pořizovací cena bez DPH</strong>.</p>
+<p>Sloupec <strong>ID Materiálu</strong> je volitelný. Pokud je vyplněný a položka existuje, import ji aktualizuje. Pokud je prázdný, aplikace vytvoří nové ID automaticky.</p>
+
+<p>
+    <a class="button-link" href="{{ url_for('import_template') }}">Stáhnout šablonu importu</a>
+</p>
+
+<form method="post" enctype="multipart/form-data" class="card-form">
+    <input type="file" name="file" accept=".xlsx,.xls" required>
+    <button type="submit">Importovat</button>
+</form>
+{% endblock %}

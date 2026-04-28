@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="login-card">
+    <h2>Přihlášení</h2>
+    <form method="post" class="card-form">
+        <label>Uživatel<input name="username" required autofocus></label>
+        <label>Heslo<input name="password" type="password" required></label>
+        <button type="submit">Přihlásit</button>
+    </form>
+    <p class="muted">Výchozí účty: admin/admin123 nebo user/user123. Po nasazení hesla změňte v databázi.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="cs">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sklad materiálu</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+    <h1>Sklad materiálu</h1>
+    {% if current_user %}
+    <nav>
+        <a href="{{ url_for('index') }}">Přehled</a>
+        <a href="{{ url_for('add_material') }}">Přidat</a>
+        {% if current_user.role == 'admin' %}
+            <a href="{{ url_for('import_excel') }}">Import Excel</a>
+            <a href="{{ url_for('export_excel') }}">Export Excel</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Odhlásit {{ current_user.username }}</a>
+    </nav>
+    {% endif %}
+</header>
+<main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</main>
+</body>
+</html>
