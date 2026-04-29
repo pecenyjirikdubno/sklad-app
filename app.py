@@ -7,6 +7,7 @@ from io import BytesIO
 from datetime import datetime
 import pandas as pd
 import qrcode
+from sqlalchemy import inspect, text
 
 
 app = Flask(__name__)
@@ -62,6 +63,13 @@ class StockMovement(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
 
 
+class JobOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_number = db.Column(db.String(20), unique=True)
+    name = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+
 # =========================
 # AUTH
 # =========================
@@ -104,7 +112,7 @@ def clean_float(value):
     if value is None or value == "":
         return 0.0
     try:
-        return float(str(value).replace(",", "."))
+        return float(str(value).replace(" ", "").replace(",", "."))
     except Exception:
         return 0.0
 
@@ -120,6 +128,25 @@ def generate_material_id():
         num = last.id
 
     return f"JZ{num + 1:05d}"
+
+
+def generate_order_number():
+    """Číslo zakázky ve formátu YYYYMMDDNN, např. 2026042901."""
+    prefix = datetime.now().strftime("%Y%m%d")
+    existing_numbers = [
+        order.order_number for order in JobOrder.query
+        .filter(JobOrder.order_number.startswith(prefix))
+        .all()
+    ]
+
+    max_seq = 0
+    for number in existing_numbers:
+        try:
+            max_seq = max(max_seq, int(str(number)[8:]))
+        except Exception:
+            pass
+
+    return f"{prefix}{max_seq + 1:02d}"
 
 
 def read_excel(file):
@@ -150,6 +177,22 @@ def create_initial_users():
         ))
 
     db.session.commit()
+
+
+def ensure_schema_updates():
+    """Doplní chybějící sloupce po starších verzích bez migrací."""
+    inspector = inspect(db.engine)
+    table_names = inspector.get_table_names()
+
+    if "stock_movement" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("stock_movement")}
+        if "order_number" not in columns:
+            dialect = db.engine.dialect.name
+            if dialect == "postgresql":
+                db.session.execute(text("ALTER TABLE stock_movement ADD COLUMN IF NOT EXISTS order_number VARCHAR(100)"))
+            else:
+                db.session.execute(text("ALTER TABLE stock_movement ADD COLUMN order_number VARCHAR(100)"))
+            db.session.commit()
 
 
 # =========================
@@ -237,7 +280,8 @@ def movement(item_id):
     if request.method == "POST":
         qty = clean_float(request.form.get("quantity"))
         typ = request.form.get("type")
-        order_number = request.form.get("order_number") or ""
+        issued_to = request.form.get("issued_to")
+        order_number = ""
 
         if qty <= 0:
             flash("Množství musí být větší než 0")
@@ -246,10 +290,24 @@ def movement(item_id):
         if typ == "in":
             m.quantity += qty
         elif typ == "out":
-            if qty > m.quantity:
+            if qty > (m.quantity or 0):
                 flash("Nedostatek na skladě")
                 return redirect(url_for("movement", item_id=item_id))
             m.quantity -= qty
+
+            if issued_to == "internal":
+                order_number = "Vlastní spotřeba"
+            elif issued_to == "existing":
+                order_number = request.form.get("order_number") or ""
+                if not order_number:
+                    flash("Vyber zakázku nebo zvol vlastní spotřebu.")
+                    return redirect(url_for("movement", item_id=item_id))
+            elif issued_to == "new":
+                order_name = request.form.get("new_order_name") or "Nová zakázka"
+                order_number = generate_order_number()
+                db.session.add(JobOrder(order_number=order_number, name=order_name))
+            else:
+                order_number = "Vlastní spotřeba"
         else:
             flash("Neplatný typ pohybu")
             return redirect(url_for("movement", item_id=item_id))
@@ -265,7 +323,8 @@ def movement(item_id):
         db.session.commit()
         return redirect(url_for("stock_card", item_id=item_id))
 
-    return render_template("movement.html", material=m, item=m)
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+    return render_template("movement.html", material=m, item=m, orders=orders)
 
 
 @app.route("/move/<int:item_id>", methods=["GET", "POST"])
@@ -346,6 +405,14 @@ def export_excel():
     )
 
 
+@app.route("/orders")
+@login_required
+@admin_required
+def orders():
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+    return render_template("orders.html", orders=orders)
+
+
 @app.route("/import", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -419,6 +486,7 @@ def import_excel():
 
 with app.app_context():
     db.create_all()
+    ensure_schema_updates()
     create_initial_users()
 
 
