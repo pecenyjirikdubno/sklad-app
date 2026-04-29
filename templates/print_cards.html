@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Tisk skladových karet</title>
+<style>
+    body { font-family: Arial, sans-serif; color:#111; margin: 20px; }
+    .toolbar { margin-bottom: 18px; }
+    .card { border:1px solid #222; border-radius:10px; padding:16px; margin-bottom:18px; page-break-inside: avoid; }
+    .simple-card { display:grid; grid-template-columns: 120px 1fr; gap:14px; align-items:center; min-height:130px; }
+    .qr { width:110px; height:110px; }
+    h1, h2, h3 { margin:0 0 10px 0; }
+    table { border-collapse: collapse; width:100%; margin-top:12px; font-size:13px; }
+    th, td { border:1px solid #999; padding:6px; text-align:left; }
+    th { background:#eee; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:6px 22px; }
+    .label { color:#555; font-size:12px; }
+    .value { font-weight:bold; font-size:16px; }
+    @media print {
+        .toolbar { display:none; }
+        body { margin:0; }
+        .card { page-break-inside: avoid; }
+    }
+</style>
+</head>
+<body>
+<div class="toolbar">
+    <button onclick="window.print()">Tisknout</button>
+    <button onclick="window.close()">Zavřít</button>
+</div>
+
+{% for item in materials %}
+    {% if mode == 'simple' %}
+        <section class="card simple-card">
+            <div>
+                <img class="qr" src="{{ url_for('qr_code', item_id=item.id) }}" alt="QR {{ item.material_id }}">
+            </div>
+            <div>
+                <h2>{{ item.material_id }}</h2>
+                <div><span class="label">ID výrobce:</span> <span class="value">{{ item.manufacturer_id or '-' }}</span></div>
+                <div><span class="label">Název:</span> <span class="value">{{ item.name }}</span></div>
+                <div><span class="label">Množství:</span> <span class="value">{{ item.quantity }} {{ item.unit }}</span></div>
+            </div>
+        </section>
+    {% else %}
+        <section class="card">
+            <div style="display:flex; justify-content:space-between; gap:20px;">
+                <div>
+                    <h2>Skladová karta {{ item.material_id }}</h2>
+                    <div class="grid">
+                        <div><div class="label">ID výrobce</div><div class="value">{{ item.manufacturer_id or '-' }}</div></div>
+                        <div><div class="label">Název</div><div class="value">{{ item.name }}</div></div>
+                        <div><div class="label">Množství</div><div class="value">{{ item.quantity }} {{ item.unit }}</div></div>
+                        <div><div class="label">Cena bez DPH</div><div class="value">{{ item.price_without_vat }}</div></div>
+                    </div>
+                </div>
+                <div>
+                    <img class="qr" src="{{ url_for('qr_code', item_id=item.id) }}" alt="QR {{ item.material_id }}">
+                </div>
+            </div>
+
+            <h3 style="margin-top:18px;">Pohyby na skladě</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Datum</th>
+                        <th>Typ</th>
+                        <th>Množství</th>
+                        <th>Zakázka / vydáno</th>
+                        <th>Uživatel</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for movement in movement_map.get(item.id, []) %}
+                    <tr>
+                        <td>{{ movement.created_at.strftime('%d.%m.%Y %H:%M') if movement.created_at else '' }}</td>
+                        <td>{{ 'Příjem' if movement.movement_type in ['in', 'prijem'] else 'Výdej' }}</td>
+                        <td>{{ movement.quantity }} {{ item.unit }}</td>
+                        <td>{{ movement.order_number or '-' }}</td>
+                        <td>{{ movement.username or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5">Zatím nejsou evidované žádné pohyby.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+{% else %}
+    <p>Nebyly vybrány žádné karty k tisku.</p>
+{% endfor %}
+</body>
+</html>

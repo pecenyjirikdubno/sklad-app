@@ -11,6 +11,9 @@
             <a class="button-link" href="{{ url_for('move_item', item_id=item.id) }}">Zapsat příjem/výdej</a>
             {% if current_user and current_user.role == "admin" %}
                 <a class="button-link" href="{{ url_for('orders') }}">Zakázky</a>
+                <a class="button-link" href="{{ url_for('print_card', item_id=item.id, mode='full') }}" target="_blank">Tisk karta</a>
+                <a class="button-link" href="{{ url_for('print_card', item_id=item.id, mode='simple') }}" target="_blank">Tisk zjednodušeně</a>
+                <a class="button-link" href="{{ url_for('print_select') }}">Tisk více karet</a>
             {% endif %}
         </p>
     </div>

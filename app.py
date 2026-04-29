@@ -481,6 +481,73 @@ def import_excel():
 
 
 # =========================
+# TISK SKLADOVÝCH KARET
+# =========================
+
+@app.route("/print/select")
+@login_required
+@admin_required
+def print_select():
+    q = request.args.get("q", "").strip()
+    query = Material.query
+
+    if q:
+        query = query.filter(
+            Material.material_id.contains(q) |
+            Material.manufacturer_id.contains(q) |
+            Material.name.contains(q)
+        )
+
+    materials = query.order_by(Material.material_id.asc()).all()
+    return render_template("print_select.html", materials=materials, items=materials, q=q)
+
+
+@app.route("/print/card/<int:item_id>")
+@login_required
+@admin_required
+def print_card(item_id):
+    mode = request.args.get("mode", "full")
+    return redirect(url_for("print_cards", ids=item_id, mode=mode))
+
+
+@app.route("/print/cards")
+@login_required
+@admin_required
+def print_cards():
+    mode = request.args.get("mode", "full")
+    if mode not in ["full", "simple"]:
+        mode = "full"
+
+    raw_ids = request.args.getlist("ids")
+    ids = []
+    for raw_id in raw_ids:
+        try:
+            ids.append(int(raw_id))
+        except Exception:
+            pass
+
+    query = Material.query
+    if ids:
+        query = query.filter(Material.id.in_(ids))
+
+    materials = query.order_by(Material.material_id.asc()).all()
+
+    movement_map = {}
+    if mode == "full":
+        for material in materials:
+            movement_map[material.id] = StockMovement.query.filter_by(
+                material_id=material.id
+            ).order_by(StockMovement.created_at.desc()).all()
+
+    return render_template(
+        "print_cards.html",
+        materials=materials,
+        items=materials,
+        movement_map=movement_map,
+        mode=mode
+    )
+
+# =========================
 # INIT
 # =========================
 
