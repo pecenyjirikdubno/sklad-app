@@ -1,86 +1,23 @@
-{% extends "base.html" %}
-
-{% block content %}
+{% extends "base.html" %}{% block content %}
 <h2>Pohyb materiálu {{ material.material_id }}</h2>
-
-<p><strong>{{ material.name }}</strong></p>
-<p>Aktuálně skladem: {{ material.quantity }} {{ material.unit }}</p>
-
+<p><strong>{{ material.name }}</strong></p><p>Aktuálně skladem: {{ material.quantity }} {{ material.unit }}</p>
 <form method="post">
-    <input type="hidden" name="type" id="movement_type" value="in">
-
-    <div style="display:flex; gap:12px; margin:20px 0; flex-wrap:wrap;">
-        <button type="button" onclick="setType('in')" id="btn-in"
-                style="background:#16a34a;color:white;padding:14px 18px;border:0;border-radius:8px;cursor:pointer;">
-            Naskladnit / příjem
-        </button>
-
-        <button type="button" onclick="setType('out')" id="btn-out"
-                style="background:#dc2626;color:white;padding:14px 18px;border:0;border-radius:8px;cursor:pointer;">
-            Vyskladnit / výdej
-        </button>
-    </div>
-
-    <label>Množství</label>
-    <input type="number" step="0.01" name="quantity" required>
-
-    <div id="issue-box" style="display:none; margin-top:15px; padding:12px; border:1px solid #ddd; border-radius:8px;">
-        <h3>Vydáno</h3>
-
-        <label>
-            <input type="radio" name="issued_to" value="internal" checked>
-            Vlastní spotřeba
-        </label><br><br>
-
-        <label>
-            <input type="radio" name="issued_to" value="existing">
-            Existující zakázka
-        </label><br>
-
-        <select name="order_number">
-            <option value="">-- vyber zakázku --</option>
-            {% for order in orders %}
-                <option value="{{ order.order_number }}">
-                    {{ order.order_number }} - {{ order.name }}
-                </option>
-            {% endfor %}
-        </select>
-
-        <br><br>
-
-        <label>
-            <input type="radio" name="issued_to" value="new">
-            Založit novou zakázku
-        </label><br>
-
-        <input name="new_order_name" placeholder="Název nové zakázky">
-        <p class="muted">Číslo zakázky se vytvoří automaticky ve formátu YYYYMMDDNN.</p>
-    </div>
-
-    <br>
-    <button type="submit">Uložit pohyb</button>
+<input type="hidden" name="type" id="movement_type" value="in">
+<div style="display:flex; gap:12px; margin:20px 0;">
+<button type="button" onclick="setType('in')" id="btn-in" style="background:#16a34a;color:white;padding:14px;border:0;border-radius:8px;">Naskladnit / příjem</button>
+<button type="button" onclick="setType('out')" id="btn-out" style="background:#dc2626;color:white;padding:14px;border:0;border-radius:8px;">Vyskladnit / výdej</button>
+</div>
+<label>Množství</label><input type="number" step="0.01" name="quantity" required>
+<div id="issue-box" style="display:none; margin-top:15px;">
+<h3>Vydáno</h3>
+<label><input type="radio" name="issued_to" value="internal" checked> Vlastní spotřeba</label><br>
+<label><input type="radio" name="issued_to" value="existing"> Existující zakázka</label>
+<select name="order_number">{% for order in orders %}<option value="{{ order.order_number }}">{{ order.order_number }} - {{ order.name }}</option>{% endfor %}</select><br><br>
+<label><input type="radio" name="issued_to" value="new"> Založit novou zakázku</label>
+<input name="new_order_name" placeholder="Název nové zakázky">
+</div><br><button type="submit">Uložit pohyb</button>
 </form>
-
-<p><a href="{{ url_for('index') }}">Zpět na přehled</a></p>
-
 <script>
-function setType(type) {
-    document.getElementById("movement_type").value = type;
-
-    const issueBox = document.getElementById("issue-box");
-    const btnIn = document.getElementById("btn-in");
-    const btnOut = document.getElementById("btn-out");
-
-    if (type === "out") {
-        issueBox.style.display = "block";
-        btnOut.style.opacity = "1";
-        btnIn.style.opacity = "0.45";
-    } else {
-        issueBox.style.display = "none";
-        btnIn.style.opacity = "1";
-        btnOut.style.opacity = "0.45";
-    }
-}
-setType("in");
+function setType(type){document.getElementById("movement_type").value=type; const box=document.getElementById("issue-box"); const bi=document.getElementById("btn-in"); const bo=document.getElementById("btn-out"); if(type==="out"){box.style.display="block";bo.style.opacity="1";bi.style.opacity=".45";}else{box.style.display="none";bi.style.opacity="1";bo.style.opacity=".45";}} setType("in");
 </script>
 {% endblock %}

@@ -1,20 +1,11 @@
-<h2>Přidat materiál</h2>
-
+{% extends "base.html" %}{% block content %}
+<h2>{{ 'Upravit' if material else 'Přidat' }} materiál</h2>
 <form method="post" class="form-card">
-    <label>ID výrobce</label>
-    <input name="manufacturer_id">
-
-    <label>Název</label>
-    <input name="name" required>
-
-    <label>Množství</label>
-    <input name="quantity" type="number" step="0.01" value="0">
-
-    <label>Mn.j.</label>
-    <input name="unit" placeholder="ks, m, kg...">
-
-    <label>Cena bez DPH</label>
-    <input name="price" type="number" step="0.01" value="0">
-
-    <button type="submit">Uložit</button>
+<label>ID výrobce</label><input name="manufacturer_id" value="{{ material.manufacturer_id if material else '' }}">
+<label>Název</label><input name="name" value="{{ material.name if material else '' }}" required>
+<label>Množství</label><input type="number" step="0.01" name="quantity" value="{{ material.quantity if material else 0 }}">
+<label>Mn.j.</label><input name="unit" value="{{ material.unit if material else '' }}">
+<label>Cena bez DPH</label><input type="number" step="0.01" name="price" value="{{ material.price_without_vat if material else 0 }}">
+<button type="submit">Uložit</button>
 </form>
+{% endblock %}

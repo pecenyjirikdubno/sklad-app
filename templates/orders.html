@@ -1,27 +1,4 @@
-{% extends "base.html" %}
-
-{% block content %}
-<h2>Zakázky</h2>
-
-<table>
-    <tr>
-        <th>Číslo zakázky</th>
-        <th>Název</th>
-        <th>Vytvořeno</th>
-    </tr>
-
-    {% for order in orders %}
-    <tr>
-        <td>{{ order.order_number }}</td>
-        <td>{{ order.name }}</td>
-        <td>{{ order.created_at.strftime("%d.%m.%Y %H:%M") if order.created_at else "" }}</td>
-    </tr>
-    {% else %}
-    <tr>
-        <td colspan="3">Zatím nejsou založené žádné zakázky.</td>
-    </tr>
-    {% endfor %}
-</table>
-
-<p><a href="{{ url_for('index') }}">Zpět</a></p>
-{% endblock %}
+{% extends "base.html" %}{% block content %}
+<h2>Zakázky</h2><table><tr><th>Číslo zakázky</th><th>Název</th><th>Vytvořeno</th></tr>
+{% for order in orders %}<tr><td>{{ order.order_number }}</td><td>{{ order.name }}</td><td>{{ order.created_at.strftime("%d.%m.%Y %H:%M") }}</td></tr>
+{% else %}<tr><td colspan="3">Žádné zakázky.</td></tr>{% endfor %}</table>{% endblock %}

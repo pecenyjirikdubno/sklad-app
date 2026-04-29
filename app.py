@@ -1,25 +1,27 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, send_file, session, flash
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
+import re
+import zipfile
 from functools import wraps
 from io import BytesIO
 from datetime import datetime
+
 import pandas as pd
 import qrcode
-from sqlalchemy import inspect, text
+from flask import Flask, render_template, request, redirect, url_for, send_file, session, flash
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "tajneheslo123")
 
-
-# =========================
-# DB: Railway PostgreSQL / lokálně SQLite
-# =========================
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
 if DATABASE_URL:
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL.replace("postgres://", "postgresql://")
 else:
@@ -31,10 +33,6 @@ else:
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
-
-# =========================
-# MODELY
-# =========================
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -70,9 +68,33 @@ class JobOrder(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
 
 
-# =========================
-# AUTH
-# =========================
+class BackupLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    period = db.Column(db.String(7), unique=True)
+    username = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+
+class IssueSlip(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    slip_number = db.Column(db.String(30), unique=True)
+    order_number = db.Column(db.String(30))
+    order_name = db.Column(db.String(255))
+    username = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+
+class IssueSlipItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    issue_slip_id = db.Column(db.Integer, db.ForeignKey("issue_slip.id"))
+    material_id_db = db.Column(db.Integer)
+    material_code = db.Column(db.String(30))
+    manufacturer_id = db.Column(db.String(100))
+    material_name = db.Column(db.String(255))
+    quantity = db.Column(db.Float)
+    unit = db.Column(db.String(50))
+    issue_slip = db.relationship("IssueSlip", backref="items")
+
 
 def current_user():
     uid = session.get("user_id")
@@ -98,21 +120,17 @@ def admin_required(fn):
     def wrapper(*a, **k):
         user = current_user()
         if not user or user.role != "admin":
-            flash("Nemáš oprávnění", "danger")
+            flash("Nemáš oprávnění.", "danger")
             return redirect(url_for("index"))
         return fn(*a, **k)
     return wrapper
 
 
-# =========================
-# HELPERS
-# =========================
-
 def clean_float(value):
     if value is None or value == "":
         return 0.0
     try:
-        return float(str(value).replace(" ", "").replace(",", "."))
+        return float(str(value).replace(",", ".").replace(" ", ""))
     except Exception:
         return 0.0
 
@@ -121,95 +139,159 @@ def generate_material_id():
     last = Material.query.order_by(Material.id.desc()).first()
     if not last:
         return "JZ00001"
-
     try:
         num = int(str(last.material_id).replace("JZ", ""))
     except Exception:
         num = last.id
-
     return f"JZ{num + 1:05d}"
 
 
 def generate_order_number():
-    """Číslo zakázky ve formátu YYYYMMDDNN, např. 2026042901."""
     prefix = datetime.now().strftime("%Y%m%d")
-    existing_numbers = [
-        order.order_number for order in JobOrder.query
-        .filter(JobOrder.order_number.startswith(prefix))
-        .all()
-    ]
+    count = JobOrder.query.filter(JobOrder.order_number.startswith(prefix)).count() + 1
+    return f"{prefix}{count:02d}"
 
-    max_seq = 0
-    for number in existing_numbers:
-        try:
-            max_seq = max(max_seq, int(str(number)[8:]))
-        except Exception:
-            pass
 
-    return f"{prefix}{max_seq + 1:02d}"
+def generate_issue_slip_number():
+    prefix = "VYD" + datetime.now().strftime("%Y%m%d")
+    count = IssueSlip.query.filter(IssueSlip.slip_number.startswith(prefix)).count() + 1
+    return f"{prefix}{count:02d}"
 
 
 def read_excel(file):
     name = file.filename.lower()
-
     if name.endswith(".xlsx"):
         return pd.read_excel(file, engine="openpyxl")
-
     if name.endswith(".xls"):
         return pd.read_excel(file, engine="xlrd")
-
     raise Exception("Použij .xls nebo .xlsx")
 
 
 def create_initial_users():
     if not User.query.filter_by(username="admin").first():
-        db.session.add(User(
-            username="admin",
-            password_hash=generate_password_hash("admin"),
-            role="admin"
-        ))
-
+        db.session.add(User(username="admin", password_hash=generate_password_hash("admin"), role="admin"))
     if not User.query.filter_by(username="user").first():
-        db.session.add(User(
-            username="user",
-            password_hash=generate_password_hash("user"),
-            role="user"
-        ))
-
+        db.session.add(User(username="user", password_hash=generate_password_hash("user"), role="user"))
     db.session.commit()
 
 
-def ensure_schema_updates():
-    """Doplní chybějící sloupce po starších verzích bez migrací."""
-    inspector = inspect(db.engine)
-    table_names = inspector.get_table_names()
-
-    if "stock_movement" in table_names:
-        columns = {column["name"] for column in inspector.get_columns("stock_movement")}
-        if "order_number" not in columns:
-            dialect = db.engine.dialect.name
-            if dialect == "postgresql":
-                db.session.execute(text("ALTER TABLE stock_movement ADD COLUMN IF NOT EXISTS order_number VARCHAR(100)"))
-            else:
-                db.session.execute(text("ALTER TABLE stock_movement ADD COLUMN order_number VARCHAR(100)"))
-            db.session.commit()
+def check_monthly_backup_notice(user):
+    if not user or user.role != "admin":
+        return
+    period = datetime.now().strftime("%Y-%m")
+    if not BackupLog.query.filter_by(period=period).first():
+        db.session.add(BackupLog(period=period, username=user.username))
+        db.session.commit()
+        flash("První přihlášení admina v novém měsíci: doporučujeme stáhnout měsíční zálohu dat.", "warning")
 
 
-# =========================
-# ROUTES
-# =========================
+def material_from_scan(value):
+    value = (value or "").strip()
+    if not value:
+        return None
+    match = re.search(r"/(?:movement|qr)/(\d+)", value)
+    if match:
+        return db.session.get(Material, int(match.group(1)))
+    if value.isdigit():
+        material = db.session.get(Material, int(value))
+        if material:
+            return material
+    return Material.query.filter_by(material_id=value).first()
+
+
+def export_backup_zip():
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_buffer = BytesIO()
+
+    tables = {
+        "materials.xlsx": pd.DataFrame([{
+            "ID Materiálu": m.material_id,
+            "ID výrobce": m.manufacturer_id or "",
+            "Název": m.name or "",
+            "Množství": m.quantity or 0,
+            "Mn.j.": m.unit or "",
+            "Cena bez DPH": m.price_without_vat or 0
+        } for m in Material.query.order_by(Material.material_id.asc()).all()]),
+        "movements.xlsx": pd.DataFrame([{
+            "Datum": m.created_at,
+            "Typ": m.movement_type,
+            "ID materiálu DB": m.material_id,
+            "Množství": m.quantity,
+            "Uživatel": m.username,
+            "Zakázka": m.order_number
+        } for m in StockMovement.query.order_by(StockMovement.created_at.desc()).all()]),
+        "orders.xlsx": pd.DataFrame([{
+            "Číslo zakázky": o.order_number,
+            "Název": o.name,
+            "Vytvořeno": o.created_at
+        } for o in JobOrder.query.order_by(JobOrder.created_at.desc()).all()]),
+        "issue_slips.xlsx": pd.DataFrame([{
+            "Výdejka": s.slip_number,
+            "Zakázka": s.order_number,
+            "Název zakázky": s.order_name,
+            "Uživatel": s.username,
+            "Vytvořeno": s.created_at
+        } for s in IssueSlip.query.order_by(IssueSlip.created_at.desc()).all()]),
+        "issue_slip_items.xlsx": pd.DataFrame([{
+            "Výdejka": i.issue_slip.slip_number if i.issue_slip else "",
+            "ID Materiálu": i.material_code,
+            "ID výrobce": i.manufacturer_id,
+            "Název": i.material_name,
+            "Množství": i.quantity,
+            "Mn.j.": i.unit
+        } for i in IssueSlipItem.query.all()])
+    }
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
+        for filename, df in tables.items():
+            xlsx_buffer = BytesIO()
+            with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False)
+            xlsx_buffer.seek(0)
+            z.writestr(filename, xlsx_buffer.read())
+        z.writestr("backup_info.txt", f"Záloha skladové aplikace\nVytvořeno: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n")
+    zip_buffer.seek(0)
+    return zip_buffer, f"sklad_backup_{now}.zip"
+
+
+def build_issue_pdf(slip):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(f"Výdejka č. {slip.slip_number}", styles["Title"]),
+        Spacer(1, 8),
+        Paragraph(f"Zakázka: {slip.order_number} - {slip.order_name}", styles["Normal"]),
+        Paragraph(f"Vydal: {slip.username}", styles["Normal"]),
+        Paragraph(f"Datum: {slip.created_at.strftime('%d.%m.%Y %H:%M')}", styles["Normal"]),
+        Spacer(1, 12)
+    ]
+
+    data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+    for item in slip.items:
+        data.append([item.material_code or "", item.manufacturer_id or "", item.material_name or "", str(item.quantity or 0), item.unit or ""])
+    table = Table(data, colWidths=[30*mm, 35*mm, 70*mm, 25*mm, 20*mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("VALIGN", (0,0), (-1,-1), "TOP")
+    ]))
+    story.append(table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         u = User.query.filter_by(username=request.form["username"]).first()
-
         if u and check_password_hash(u.password_hash, request.form["password"]):
             session["user_id"] = u.id
+            check_monthly_backup_notice(u)
             return redirect(url_for("index"))
-
-        flash("Špatné přihlášení")
-
+        flash("Špatné přihlášení", "danger")
     return render_template("login.html")
 
 
@@ -224,14 +306,8 @@ def logout():
 def index():
     q = request.args.get("q", "").strip()
     query = Material.query
-
     if q:
-        query = query.filter(
-            Material.material_id.contains(q) |
-            Material.manufacturer_id.contains(q) |
-            Material.name.contains(q)
-        )
-
+        query = query.filter(Material.material_id.contains(q) | Material.manufacturer_id.contains(q) | Material.name.contains(q))
     materials = query.order_by(Material.material_id.asc()).all()
     return render_template("index.html", materials=materials, items=materials, q=q)
 
@@ -241,18 +317,16 @@ def index():
 @admin_required
 def add_material():
     if request.method == "POST":
-        m = Material(
+        db.session.add(Material(
             material_id=generate_material_id(),
             manufacturer_id=request.form.get("manufacturer_id") or "",
             name=request.form.get("name") or "",
             quantity=clean_float(request.form.get("quantity")),
             unit=request.form.get("unit") or "",
             price_without_vat=clean_float(request.form.get("price"))
-        )
-        db.session.add(m)
+        ))
         db.session.commit()
         return redirect(url_for("index"))
-
     return render_template("form.html")
 
 
@@ -260,23 +334,14 @@ def add_material():
 @login_required
 def stock_card(item_id):
     material = Material.query.get_or_404(item_id)
-    movements = StockMovement.query.filter_by(
-        material_id=material.id
-    ).order_by(StockMovement.created_at.desc()).all()
-
-    return render_template(
-        "card.html",
-        material=material,
-        item=material,
-        movements=movements
-    )
+    movements = StockMovement.query.filter_by(material_id=material.id).order_by(StockMovement.created_at.desc()).all()
+    return render_template("card.html", material=material, item=material, movements=movements)
 
 
 @app.route("/movement/<int:item_id>", methods=["GET", "POST"])
 @login_required
 def movement(item_id):
     m = Material.query.get_or_404(item_id)
-
     if request.method == "POST":
         qty = clean_float(request.form.get("quantity"))
         typ = request.form.get("type")
@@ -284,42 +349,29 @@ def movement(item_id):
         order_number = ""
 
         if qty <= 0:
-            flash("Množství musí být větší než 0")
+            flash("Množství musí být větší než 0", "danger")
             return redirect(url_for("movement", item_id=item_id))
 
         if typ == "in":
             m.quantity += qty
         elif typ == "out":
-            if qty > (m.quantity or 0):
-                flash("Nedostatek na skladě")
-                return redirect(url_for("movement", item_id=item_id))
-            m.quantity -= qty
-
             if issued_to == "internal":
                 order_number = "Vlastní spotřeba"
             elif issued_to == "existing":
                 order_number = request.form.get("order_number") or ""
-                if not order_number:
-                    flash("Vyber zakázku nebo zvol vlastní spotřebu.")
-                    return redirect(url_for("movement", item_id=item_id))
             elif issued_to == "new":
                 order_name = request.form.get("new_order_name") or "Nová zakázka"
                 order_number = generate_order_number()
                 db.session.add(JobOrder(order_number=order_number, name=order_name))
-            else:
-                order_number = "Vlastní spotřeba"
+            if qty > m.quantity:
+                flash("Nedostatek na skladě", "danger")
+                return redirect(url_for("movement", item_id=item_id))
+            m.quantity -= qty
         else:
-            flash("Neplatný typ pohybu")
+            flash("Neplatný typ pohybu", "danger")
             return redirect(url_for("movement", item_id=item_id))
 
-        db.session.add(StockMovement(
-            material_id=m.id,
-            movement_type=typ,
-            quantity=qty,
-            username=current_user().username,
-            order_number=order_number
-        ))
-
+        db.session.add(StockMovement(material_id=m.id, movement_type=typ, quantity=qty, username=current_user().username, order_number=order_number))
         db.session.commit()
         return redirect(url_for("stock_card", item_id=item_id))
 
@@ -338,17 +390,14 @@ def move_item(item_id):
 @admin_required
 def edit_item(item_id):
     material = Material.query.get_or_404(item_id)
-
     if request.method == "POST":
         material.manufacturer_id = request.form.get("manufacturer_id") or ""
         material.name = request.form.get("name") or ""
         material.quantity = clean_float(request.form.get("quantity"))
         material.unit = request.form.get("unit") or ""
         material.price_without_vat = clean_float(request.form.get("price"))
-
         db.session.commit()
         return redirect(url_for("index"))
-
     return render_template("form.html", material=material, item=material)
 
 
@@ -357,11 +406,9 @@ def edit_item(item_id):
 @admin_required
 def delete_item(item_id):
     material = Material.query.get_or_404(item_id)
-
     StockMovement.query.filter_by(material_id=material.id).delete()
     db.session.delete(material)
     db.session.commit()
-
     return redirect(url_for("index"))
 
 
@@ -369,12 +416,10 @@ def delete_item(item_id):
 @login_required
 def qr_code(item_id):
     url = request.host_url.rstrip("/") + url_for("movement", item_id=item_id)
-
     img = qrcode.make(url)
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-
     return send_file(buf, mimetype="image/png")
 
 
@@ -390,19 +435,18 @@ def export_excel():
         "Mn.j.": m.unit or "",
         "Cena bez DPH": m.price_without_vat or 0
     } for m in Material.query.order_by(Material.material_id.asc()).all()]
-
-    df = pd.DataFrame(data)
-
     buf = BytesIO()
-    df.to_excel(buf, index=False, engine="openpyxl")
+    pd.DataFrame(data).to_excel(buf, index=False, engine="openpyxl")
     buf.seek(0)
+    return send_file(buf, download_name="export.xlsx", as_attachment=True, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    return send_file(
-        buf,
-        download_name="export.xlsx",
-        as_attachment=True,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+
+@app.route("/backup")
+@login_required
+@admin_required
+def backup_download():
+    zip_buffer, filename = export_backup_zip()
+    return send_file(zip_buffer, download_name=filename, as_attachment=True, mimetype="application/zip")
 
 
 @app.route("/orders")
@@ -413,50 +457,144 @@ def orders():
     return render_template("orders.html", orders=orders)
 
 
+@app.route("/issue", methods=["GET", "POST"])
+@login_required
+def issue_slip_new():
+    if request.method == "POST":
+        order_number = request.form.get("order_number") or ""
+        order = JobOrder.query.filter_by(order_number=order_number).first()
+        if not order:
+            flash("Vyber existující zakázku", "danger")
+            return redirect(url_for("issue_slip_new"))
+        session["issue_order_number"] = order.order_number
+        session["issue_order_name"] = order.name
+        session["issue_items"] = []
+        return redirect(url_for("issue_slip_edit"))
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+    return render_template("issue_new.html", orders=orders)
+
+
+@app.route("/issue/edit", methods=["GET", "POST"])
+@login_required
+def issue_slip_edit():
+    order_number = session.get("issue_order_number")
+    order_name = session.get("issue_order_name")
+    items = session.get("issue_items", [])
+    if not order_number:
+        flash("Nejprve vyber zakázku", "warning")
+        return redirect(url_for("issue_slip_new"))
+
+    if request.method == "POST":
+        material = material_from_scan(request.form.get("scan_value"))
+        qty = clean_float(request.form.get("quantity"))
+        if not material:
+            flash("Materiál nebyl nalezen", "danger")
+            return redirect(url_for("issue_slip_edit"))
+        if qty <= 0:
+            flash("Množství musí být větší než 0", "danger")
+            return redirect(url_for("issue_slip_edit"))
+        if qty > material.quantity:
+            flash(f"Nedostatek na skladě: {material.material_id} má skladem {material.quantity} {material.unit}", "danger")
+            return redirect(url_for("issue_slip_edit"))
+
+        items.append({
+            "material_db_id": material.id,
+            "material_code": material.material_id,
+            "manufacturer_id": material.manufacturer_id or "",
+            "name": material.name or "",
+            "quantity": qty,
+            "unit": material.unit or ""
+        })
+        session["issue_items"] = items
+        flash("Položka přidána do výdejky", "success")
+        return redirect(url_for("issue_slip_edit"))
+
+    return render_template("issue_edit.html", order_number=order_number, order_name=order_name, items=items)
+
+
+@app.route("/issue/remove/<int:index>", methods=["POST"])
+@login_required
+def issue_slip_remove(index):
+    items = session.get("issue_items", [])
+    if 0 <= index < len(items):
+        items.pop(index)
+        session["issue_items"] = items
+    return redirect(url_for("issue_slip_edit"))
+
+
+@app.route("/issue/confirm", methods=["POST"])
+@login_required
+def issue_slip_confirm():
+    order_number = session.get("issue_order_number")
+    order_name = session.get("issue_order_name")
+    items = session.get("issue_items", [])
+    if not order_number or not items:
+        flash("Výdejka nemá zakázku nebo položky", "danger")
+        return redirect(url_for("issue_slip_new"))
+
+    for item in items:
+        material = db.session.get(Material, item["material_db_id"])
+        if not material or item["quantity"] > material.quantity:
+            flash(f"Nedostatek nebo chybějící materiál {item['material_code']}", "danger")
+            return redirect(url_for("issue_slip_edit"))
+
+    slip = IssueSlip(slip_number=generate_issue_slip_number(), order_number=order_number, order_name=order_name, username=current_user().username)
+    db.session.add(slip)
+    db.session.flush()
+
+    for item in items:
+        material = db.session.get(Material, item["material_db_id"])
+        qty = clean_float(item["quantity"])
+        material.quantity -= qty
+        db.session.add(StockMovement(material_id=material.id, movement_type="out", quantity=qty, username=current_user().username, order_number=order_number))
+        db.session.add(IssueSlipItem(issue_slip_id=slip.id, material_id_db=material.id, material_code=material.material_id, manufacturer_id=material.manufacturer_id or "", material_name=material.name or "", quantity=qty, unit=material.unit or ""))
+
+    db.session.commit()
+    session.pop("issue_order_number", None)
+    session.pop("issue_order_name", None)
+    session.pop("issue_items", None)
+    flash(f"Výdejka {slip.slip_number} vytvořena", "success")
+    return redirect(url_for("issue_slip_detail", slip_id=slip.id))
+
+
+@app.route("/issue/<int:slip_id>")
+@login_required
+def issue_slip_detail(slip_id):
+    slip = IssueSlip.query.get_or_404(slip_id)
+    return render_template("issue_detail.html", slip=slip)
+
+
+@app.route("/issue/<int:slip_id>/pdf")
+@login_required
+def issue_slip_pdf(slip_id):
+    slip = IssueSlip.query.get_or_404(slip_id)
+    return send_file(build_issue_pdf(slip), download_name=f"{slip.slip_number}.pdf", as_attachment=True, mimetype="application/pdf")
+
+
 @app.route("/import", methods=["GET", "POST"])
 @login_required
 @admin_required
 def import_excel():
     if request.method == "GET":
-        return """
-        <h2>Import Excel</h2>
-        <form method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".xls,.xlsx" required>
-            <button type="submit">Importovat</button>
-        </form>
-        <p><a href="/">Zpět</a></p>
-        """
-
+        return render_template("import.html")
     file = request.files.get("file")
-
     if not file or file.filename == "":
-        flash("Vyber soubor")
+        flash("Vyber soubor", "danger")
         return redirect(url_for("index"))
-
     try:
         df = read_excel(file)
     except Exception as e:
-        flash(str(e))
+        flash(str(e), "danger")
         return redirect(url_for("index"))
 
-    imported = 0
-    updated = 0
-    skipped = 0
-
+    imported = updated = skipped = 0
     for _, row in df.iterrows():
         name = str(row.get("Název", "") or "").strip()
-
         if not name:
             skipped += 1
             continue
-
-        material_id = str(row.get("ID Materiálu", "") or "").strip()
-
-        if not material_id:
-            material_id = generate_material_id()
-
+        material_id = str(row.get("ID Materiálu", "") or "").strip() or generate_material_id()
         existing = Material.query.filter_by(material_id=material_id).first()
-
         if existing:
             existing.manufacturer_id = str(row.get("ID výrobce", "") or "").strip()
             existing.name = name
@@ -465,95 +603,15 @@ def import_excel():
             existing.price_without_vat = clean_float(row.get("Cena bez DPH"))
             updated += 1
         else:
-            db.session.add(Material(
-                material_id=material_id,
-                manufacturer_id=str(row.get("ID výrobce", "") or "").strip(),
-                name=name,
-                quantity=clean_float(row.get("Množství")),
-                unit=str(row.get("Mn.j.", "") or "").strip(),
-                price_without_vat=clean_float(row.get("Cena bez DPH"))
-            ))
+            db.session.add(Material(material_id=material_id, manufacturer_id=str(row.get("ID výrobce", "") or "").strip(), name=name, quantity=clean_float(row.get("Množství")), unit=str(row.get("Mn.j.", "") or "").strip(), price_without_vat=clean_float(row.get("Cena bez DPH"))))
             imported += 1
-
     db.session.commit()
-    flash(f"Import hotov. Přidáno: {imported}, aktualizováno: {updated}, přeskočeno: {skipped}")
+    flash(f"Import hotov. Přidáno: {imported}, aktualizováno: {updated}, přeskočeno: {skipped}", "success")
     return redirect(url_for("index"))
 
 
-# =========================
-# TISK SKLADOVÝCH KARET
-# =========================
-
-@app.route("/print/select")
-@login_required
-@admin_required
-def print_select():
-    q = request.args.get("q", "").strip()
-    query = Material.query
-
-    if q:
-        query = query.filter(
-            Material.material_id.contains(q) |
-            Material.manufacturer_id.contains(q) |
-            Material.name.contains(q)
-        )
-
-    materials = query.order_by(Material.material_id.asc()).all()
-    return render_template("print_select.html", materials=materials, items=materials, q=q)
-
-
-@app.route("/print/card/<int:item_id>")
-@login_required
-@admin_required
-def print_card(item_id):
-    mode = request.args.get("mode", "full")
-    return redirect(url_for("print_cards", ids=item_id, mode=mode))
-
-
-@app.route("/print/cards")
-@login_required
-@admin_required
-def print_cards():
-    mode = request.args.get("mode", "full")
-    if mode not in ["full", "simple"]:
-        mode = "full"
-
-    raw_ids = request.args.getlist("ids")
-    ids = []
-    for raw_id in raw_ids:
-        try:
-            ids.append(int(raw_id))
-        except Exception:
-            pass
-
-    query = Material.query
-    if ids:
-        query = query.filter(Material.id.in_(ids))
-
-    materials = query.order_by(Material.material_id.asc()).all()
-
-    movement_map = {}
-    if mode == "full":
-        for material in materials:
-            movement_map[material.id] = StockMovement.query.filter_by(
-                material_id=material.id
-            ).order_by(StockMovement.created_at.desc()).all()
-
-    return render_template(
-        "print_cards.html",
-        materials=materials,
-        items=materials,
-        movement_map=movement_map,
-        mode=mode
-    )
-
-# =========================
-# INIT
-# =========================
-
 with app.app_context():
     db.create_all()
-    ensure_schema_updates()
     create_initial_users()
 
 
