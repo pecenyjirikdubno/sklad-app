@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Založit novou zakázku</h2>
+
+<form method="post" class="form-card">
+    <label>Název zakázky</label>
+    <input name="name" required>
+
+    <button type="submit">Založit zakázku</button>
+</form>
+
+<p><a href="{{ url_for('orders') }}">Zpět na zakázky</a></p>
+{% endblock %}
