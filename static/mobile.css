@@ -1,0 +1,138 @@
+/* Mobilní režim / PWA doplněk */
+
+:root {
+  --mobile-header: #1f2937;
+  --mobile-accent: #2563eb;
+  --mobile-success: #16a34a;
+  --mobile-danger: #dc2626;
+}
+
+button,
+.button-link,
+nav a,
+input,
+select {
+  min-height: 42px;
+}
+
+.pwa-install {
+  display: none;
+  background: #2563eb;
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  body {
+    padding-bottom: 76px;
+    font-size: 16px;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  header h1 {
+    font-size: 20px;
+  }
+
+  nav {
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  nav a {
+    white-space: nowrap;
+    padding: 10px 12px;
+  }
+
+  main {
+    padding: 12px;
+  }
+
+  h2 {
+    font-size: 22px;
+  }
+
+  .card-form,
+  form {
+    max-width: 100%;
+  }
+
+  input,
+  select,
+  button {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px;
+  }
+
+  table {
+    min-width: 760px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .qr-small {
+    width: 74px;
+    height: 74px;
+  }
+
+  .card-detail {
+    display: block;
+  }
+
+  .qr-box img {
+    max-width: 220px;
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #111827;
+    z-index: 50;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.25);
+  }
+
+  .mobile-bottom-nav a {
+    color: white;
+    text-decoration: none;
+    text-align: center;
+    padding: 10px 4px;
+    font-size: 12px;
+  }
+
+  .mobile-bottom-nav span {
+    display: block;
+    font-size: 20px;
+    line-height: 22px;
+  }
+
+  #reader {
+    max-width: 100% !important;
+  }
+}
+
+@media print {
+  .mobile-bottom-nav,
+  .pwa-install,
+  nav {
+    display: none !important;
+  }
+}
