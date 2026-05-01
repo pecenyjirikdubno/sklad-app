@@ -1020,7 +1020,267 @@ def issue_slip_pdf(slip_id):
     return send_file(pdf, download_name=f"{slip.slip_number}.pdf", as_attachment=True, mimetype="application/pdf")
 
 
-# =========================\n# PŘÍJEMKA NA SKLAD\n# =========================\n\n@app.route("/receipts")\n@login_required\n@admin_required\ndef receipt_slip_list():\n    selected_order = request.args.get("order_number", "").strip()\n    selected_source = request.args.get("source_type", "").strip()\n\n    query = ReceiptSlip.query\n    if selected_order:\n        query = query.filter_by(order_number=selected_order)\n    if selected_source:\n        query = query.filter_by(source_type=selected_source)\n\n    receipts = query.order_by(ReceiptSlip.created_at.desc()).all()\n    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()\n\n    return render_template(\n        "receipt_list.html",\n        receipts=receipts,\n        orders=orders,\n        selected_order=selected_order,\n        selected_source=selected_source\n    )\n\n\n@app.route("/receipt", methods=["GET", "POST"])\n@login_required\ndef receipt_slip_new():\n    if request.method == "POST":\n        source_type = request.form.get("source_type") or "new_purchase"\n        order_number = ""\n        order_name = ""\n\n        if source_type == "return_from_order":\n            order_number = request.form.get("order_number") or ""\n            order = JobOrder.query.filter_by(order_number=order_number).first()\n            if not order:\n                flash("Vyber existující zakázku pro vratku.", "danger")\n                return redirect(url_for("receipt_slip_new"))\n            order_name = order.name\n        else:\n            source_type = "new_purchase"\n\n        session["receipt_source_type"] = source_type\n        session["receipt_order_number"] = order_number\n        session["receipt_order_name"] = order_name\n        session["receipt_items"] = []\n        session.modified = True\n        return redirect(url_for("receipt_slip_edit"))\n\n    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()\n    return render_template("receipt_new.html", orders=orders)\n\n\n@app.route("/receipt/edit", methods=["GET", "POST"])\n@login_required\ndef receipt_slip_edit():\n    source_type = session.get("receipt_source_type")\n    order_number = session.get("receipt_order_number", "")\n    order_name = session.get("receipt_order_name", "")\n    items = list(session.get("receipt_items", []))\n\n    if not source_type:\n        flash("Nejprve zvol typ příjmu.", "warning")\n        return redirect(url_for("receipt_slip_new"))\n\n    if request.method == "POST":\n        material = material_from_scan(request.form.get("scan_value"))\n        quantity = clean_float(request.form.get("quantity"))\n\n        if not material:\n            flash("Materiál nebyl nalezen.", "danger")\n            return redirect(url_for("receipt_slip_edit"))\n\n        if quantity <= 0:\n            flash("Množství musí být větší než 0.", "danger")\n            return redirect(url_for("receipt_slip_edit"))\n\n        existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)\n        if existing_item:\n            existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity\n        else:\n            items.append({\n                "material_db_id": material.id,\n                "material_code": material.material_id,\n                "manufacturer_id": material.manufacturer_id or "",\n                "name": material.name or "",\n                "quantity": quantity,\n                "unit": material.unit or ""\n            })\n\n        session["receipt_items"] = items\n        session.modified = True\n\n        flash("Položka přidána do příjemky.", "success")\n        return redirect(url_for("receipt_slip_edit"))\n\n    return render_template(\n        "receipt_edit.html",\n        source_type=source_type,\n        order_number=order_number,\n        order_name=order_name,\n        items=items\n    )\n\n\n@app.route("/api/receipt/add", methods=["POST"])\n@login_required\ndef api_receipt_add():\n    source_type = session.get("receipt_source_type")\n    if not source_type:\n        return {"ok": False, "message": "Nejprve zvol typ příjmu."}, 400\n\n    material = material_from_scan(request.form.get("scan_value"))\n    quantity = clean_float(request.form.get("quantity"))\n    items = list(session.get("receipt_items", []))\n\n    if not material:\n        return {"ok": False, "message": "Materiál nebyl nalezen."}, 404\n\n    if quantity <= 0:\n        return {"ok": False, "message": "Množství musí být větší než 0."}, 400\n\n    existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)\n    if existing_item:\n        existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity\n    else:\n        items.append({\n            "material_db_id": material.id,\n            "material_code": material.material_id,\n            "manufacturer_id": material.manufacturer_id or "",\n            "name": material.name or "",\n            "quantity": quantity,\n            "unit": material.unit or ""\n        })\n\n    session["receipt_items"] = items\n    session.modified = True\n\n    return {\n        "ok": True,\n        "message": "Položka přidána do příjemky.",\n        "items": items,\n        "material": {\n            "material_id": material.material_id,\n            "name": material.name,\n            "quantity": material.quantity,\n            "unit": material.unit\n        }\n    }\n\n\n@app.route("/receipt/remove/<int:index>", methods=["POST"])\n@login_required\ndef receipt_slip_remove(index):\n    items = list(session.get("receipt_items", []))\n    if 0 <= index < len(items):\n        items.pop(index)\n        session["receipt_items"] = items\n        session.modified = True\n    return redirect(url_for("receipt_slip_edit"))\n\n\n@app.route("/receipt/confirm", methods=["POST"])\n@login_required\ndef receipt_slip_confirm():\n    source_type = session.get("receipt_source_type")\n    order_number = session.get("receipt_order_number", "")\n    order_name = session.get("receipt_order_name", "")\n    items = list(session.get("receipt_items", []))\n\n    if not source_type or not items:\n        flash("Příjemka nemá typ příjmu nebo položky.", "danger")\n        return redirect(url_for("receipt_slip_new"))\n\n    if source_type == "return_from_order":\n        order = JobOrder.query.filter_by(order_number=order_number).first()\n        if not order:\n            flash("Zakázka pro vratku neexistuje.", "danger")\n            return redirect(url_for("receipt_slip_new"))\n        order_name = order.name\n    else:\n        source_type = "new_purchase"\n        order_number = ""\n        order_name = ""\n\n    for item in items:\n        material = db.session.get(Material, item["material_db_id"])\n        if not material:\n            flash(f"Chybějící materiál {item['material_code']}", "danger")\n            return redirect(url_for("receipt_slip_edit"))\n\n    slip = ReceiptSlip(\n        receipt_number=generate_receipt_slip_number(),\n        source_type=source_type,\n        order_number=order_number,\n        order_name=order_name,\n        username=current_user().username\n    )\n    db.session.add(slip)\n    db.session.flush()\n\n    movement_order_number = order_number if source_type == "return_from_order" else "Nově pořízený materiál"\n\n    for item in items:\n        material = db.session.get(Material, item["material_db_id"])\n        quantity = clean_float(item["quantity"])\n        material.quantity += quantity\n\n        db.session.add(StockMovement(\n            material_id=material.id,\n            movement_type="prijem",\n            quantity=quantity,\n            username=current_user().username,\n            order_number=movement_order_number\n        ))\n\n        db.session.add(ReceiptSlipItem(\n            receipt_slip_id=slip.id,\n            material_id_db=material.id,\n            material_code=material.material_id,\n            manufacturer_id=material.manufacturer_id or "",\n            material_name=material.name or "",\n            quantity=quantity,\n            unit=material.unit or ""\n        ))\n\n    db.session.commit()\n\n    session.pop("receipt_source_type", None)\n    session.pop("receipt_order_number", None)\n    session.pop("receipt_order_name", None)\n    session.pop("receipt_items", None)\n    session.modified = True\n\n    flash(f"Příjemka {slip.receipt_number} vytvořena.", "success")\n    return redirect(url_for("receipt_slip_detail", receipt_id=slip.id))\n\n\n@app.route("/receipt/<int:receipt_id>")\n@login_required\ndef receipt_slip_detail(receipt_id):\n    slip = ReceiptSlip.query.get_or_404(receipt_id)\n    return render_template("receipt_detail.html", slip=slip)\n\n\n@app.route("/receipt/<int:receipt_id>/pdf")\n@login_required\ndef receipt_slip_pdf(receipt_id):\n    slip = ReceiptSlip.query.get_or_404(receipt_id)\n    pdf = build_receipt_pdf(slip)\n    return send_file(pdf, download_name=f"{slip.receipt_number}.pdf", as_attachment=True, mimetype="application/pdf")\n\n\n# =========================
+# =========================
+# PŘÍJEMKA NA SKLAD
+# =========================
+
+@app.route("/receipts")
+@login_required
+@admin_required
+def receipt_slip_list():
+    selected_order = request.args.get("order_number", "").strip()
+    selected_source = request.args.get("source_type", "").strip()
+
+    query = ReceiptSlip.query
+    if selected_order:
+        query = query.filter_by(order_number=selected_order)
+    if selected_source:
+        query = query.filter_by(source_type=selected_source)
+
+    receipts = query.order_by(ReceiptSlip.created_at.desc()).all()
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+
+    return render_template(
+        "receipt_list.html",
+        receipts=receipts,
+        orders=orders,
+        selected_order=selected_order,
+        selected_source=selected_source
+    )
+
+
+@app.route("/receipt", methods=["GET", "POST"])
+@login_required
+def receipt_slip_new():
+    if request.method == "POST":
+        source_type = request.form.get("source_type") or "new_purchase"
+        order_number = ""
+        order_name = ""
+
+        if source_type == "return_from_order":
+            order_number = request.form.get("order_number") or ""
+            order = JobOrder.query.filter_by(order_number=order_number).first()
+            if not order:
+                flash("Vyber existující zakázku pro vratku.", "danger")
+                return redirect(url_for("receipt_slip_new"))
+            order_name = order.name
+        else:
+            source_type = "new_purchase"
+
+        session["receipt_source_type"] = source_type
+        session["receipt_order_number"] = order_number
+        session["receipt_order_name"] = order_name
+        session["receipt_items"] = []
+        session.modified = True
+        return redirect(url_for("receipt_slip_edit"))
+
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+    return render_template("receipt_new.html", orders=orders)
+
+
+@app.route("/receipt/edit", methods=["GET", "POST"])
+@login_required
+def receipt_slip_edit():
+    source_type = session.get("receipt_source_type")
+    order_number = session.get("receipt_order_number", "")
+    order_name = session.get("receipt_order_name", "")
+    items = list(session.get("receipt_items", []))
+
+    if not source_type:
+        flash("Nejprve zvol typ příjmu.", "warning")
+        return redirect(url_for("receipt_slip_new"))
+
+    if request.method == "POST":
+        material = material_from_scan(request.form.get("scan_value"))
+        quantity = clean_float(request.form.get("quantity"))
+
+        if not material:
+            flash("Materiál nebyl nalezen.", "danger")
+            return redirect(url_for("receipt_slip_edit"))
+
+        if quantity <= 0:
+            flash("Množství musí být větší než 0.", "danger")
+            return redirect(url_for("receipt_slip_edit"))
+
+        existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)
+        if existing_item:
+            existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity
+        else:
+            items.append({
+                "material_db_id": material.id,
+                "material_code": material.material_id,
+                "manufacturer_id": material.manufacturer_id or "",
+                "name": material.name or "",
+                "quantity": quantity,
+                "unit": material.unit or ""
+            })
+
+        session["receipt_items"] = items
+        session.modified = True
+
+        flash("Položka přidána do příjemky.", "success")
+        return redirect(url_for("receipt_slip_edit"))
+
+    return render_template(
+        "receipt_edit.html",
+        source_type=source_type,
+        order_number=order_number,
+        order_name=order_name,
+        items=items
+    )
+
+
+@app.route("/api/receipt/add", methods=["POST"])
+@login_required
+def api_receipt_add():
+    source_type = session.get("receipt_source_type")
+    if not source_type:
+        return {"ok": False, "message": "Nejprve zvol typ příjmu."}, 400
+
+    material = material_from_scan(request.form.get("scan_value"))
+    quantity = clean_float(request.form.get("quantity"))
+    items = list(session.get("receipt_items", []))
+
+    if not material:
+        return {"ok": False, "message": "Materiál nebyl nalezen."}, 404
+
+    if quantity <= 0:
+        return {"ok": False, "message": "Množství musí být větší než 0."}, 400
+
+    existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)
+    if existing_item:
+        existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity
+    else:
+        items.append({
+            "material_db_id": material.id,
+            "material_code": material.material_id,
+            "manufacturer_id": material.manufacturer_id or "",
+            "name": material.name or "",
+            "quantity": quantity,
+            "unit": material.unit or ""
+        })
+
+    session["receipt_items"] = items
+    session.modified = True
+
+    return {
+        "ok": True,
+        "message": "Položka přidána do příjemky.",
+        "items": items,
+        "material": {
+            "material_id": material.material_id,
+            "name": material.name,
+            "quantity": material.quantity,
+            "unit": material.unit
+        }
+    }
+
+
+@app.route("/receipt/remove/<int:index>", methods=["POST"])
+@login_required
+def receipt_slip_remove(index):
+    items = list(session.get("receipt_items", []))
+    if 0 <= index < len(items):
+        items.pop(index)
+        session["receipt_items"] = items
+        session.modified = True
+    return redirect(url_for("receipt_slip_edit"))
+
+
+@app.route("/receipt/confirm", methods=["POST"])
+@login_required
+def receipt_slip_confirm():
+    source_type = session.get("receipt_source_type")
+    order_number = session.get("receipt_order_number", "")
+    order_name = session.get("receipt_order_name", "")
+    items = list(session.get("receipt_items", []))
+
+    if not source_type or not items:
+        flash("Příjemka nemá typ příjmu nebo položky.", "danger")
+        return redirect(url_for("receipt_slip_new"))
+
+    if source_type == "return_from_order":
+        order = JobOrder.query.filter_by(order_number=order_number).first()
+        if not order:
+            flash("Zakázka pro vratku neexistuje.", "danger")
+            return redirect(url_for("receipt_slip_new"))
+        order_name = order.name
+    else:
+        source_type = "new_purchase"
+        order_number = ""
+        order_name = ""
+
+    for item in items:
+        material = db.session.get(Material, item["material_db_id"])
+        if not material:
+            flash(f"Chybějící materiál {item['material_code']}", "danger")
+            return redirect(url_for("receipt_slip_edit"))
+
+    slip = ReceiptSlip(
+        receipt_number=generate_receipt_slip_number(),
+        source_type=source_type,
+        order_number=order_number,
+        order_name=order_name,
+        username=current_user().username
+    )
+    db.session.add(slip)
+    db.session.flush()
+
+    movement_order_number = order_number if source_type == "return_from_order" else "Nově pořízený materiál"
+
+    for item in items:
+        material = db.session.get(Material, item["material_db_id"])
+        quantity = clean_float(item["quantity"])
+        material.quantity += quantity
+
+        db.session.add(StockMovement(
+            material_id=material.id,
+            movement_type="prijem",
+            quantity=quantity,
+            username=current_user().username,
+            order_number=movement_order_number
+        ))
+
+        db.session.add(ReceiptSlipItem(
+            receipt_slip_id=slip.id,
+            material_id_db=material.id,
+            material_code=material.material_id,
+            manufacturer_id=material.manufacturer_id or "",
+            material_name=material.name or "",
+            quantity=quantity,
+            unit=material.unit or ""
+        ))
+
+    db.session.commit()
+
+    session.pop("receipt_source_type", None)
+    session.pop("receipt_order_number", None)
+    session.pop("receipt_order_name", None)
+    session.pop("receipt_items", None)
+    session.modified = True
+
+    flash(f"Příjemka {slip.receipt_number} vytvořena.", "success")
+    return redirect(url_for("receipt_slip_detail", receipt_id=slip.id))
+
+
+@app.route("/receipt/<int:receipt_id>")
+@login_required
+def receipt_slip_detail(receipt_id):
+    slip = ReceiptSlip.query.get_or_404(receipt_id)
+    return render_template("receipt_detail.html", slip=slip)
+
+
+@app.route("/receipt/<int:receipt_id>/pdf")
+@login_required
+def receipt_slip_pdf(receipt_id):
+    slip = ReceiptSlip.query.get_or_404(receipt_id)
+    pdf = build_receipt_pdf(slip)
+    return send_file(pdf, download_name=f"{slip.receipt_number}.pdf", as_attachment=True, mimetype="application/pdf")
+
+
+
+
+# =========================
 # SPRÁVA UŽIVATELŮ - ADMIN
 # =========================
 
