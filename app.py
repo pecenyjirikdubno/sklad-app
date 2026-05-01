@@ -491,6 +491,22 @@ def movement(item_id):
     orders = JobOrder.query.filter_by(status="active").order_by(JobOrder.created_at.desc()).all()
     return render_template("move.html", item=material, material=material, orders=orders)
 
+@app.route("/api/material_lookup")
+@login_required
+def material_lookup():
+    q = request.args.get("q", "")
+
+    material = material_from_scan(q)
+
+    if not material:
+        return {"found": False}
+
+    return {
+        "found": True,
+        "name": material.name,
+        "material_id": material.material_id
+    }
+
 
 @app.route("/move/<int:item_id>", methods=["GET", "POST"])
 @login_required
@@ -951,21 +967,6 @@ def user_delete(user_id):
     flash("Uživatel byl smazán.", "success")
     return redirect(url_for("users"))
 
-@app.route("/api/material_lookup")
-@login_required
-def material_lookup():
-    q = request.args.get("q", "")
-
-    material = material_from_scan(q)
-
-    if not material:
-        return {"found": False}
-
-    return {
-        "found": True,
-        "name": material.name,
-        "material_id": material.material_id
-    }
 
 # =========================
 # START
