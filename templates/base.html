@@ -20,6 +20,7 @@
             <a href="{{ url_for('import_excel') }}">Import Excel</a>
             <a href="{{ url_for('export_excel') }}">Export Excel</a>
             <a href="{{ url_for('users') }}">Uživatelé</a>
+	    <a href="{{ url_for('issue_slip_list') }}">Výdejky</a>
         {% endif %}
         <a href="{{ url_for('logout') }}">Odhlásit {{ current_user.username }}</a>
     </nav>
