@@ -923,6 +923,11 @@ def user_password(user_id):
 
     return render_template("user_password.html", user=edited_user)
 
+@app.route("/scan")
+@login_required
+def qr_scan():
+    next_url = request.args.get("next") or url_for("issue_slip_edit")
+    return render_template("scan.html", next_url=next_url)
 
 @app.route("/users/<int:user_id>/delete", methods=["POST"])
 @login_required

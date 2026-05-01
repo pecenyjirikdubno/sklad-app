@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>QR čtečka</h2>
+
+<p>Namiř kameru na QR kód materiálu.</p>
+
+<div id="reader" style="width:100%; max-width:420px;"></div>
+
+<p>
+    <a href="{{ next_url }}">Zpět</a>
+</p>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+function onScanSuccess(decodedText) {
+    const targetUrl = "{{ next_url }}";
+    const separator = targetUrl.includes("?") ? "&" : "?";
+    window.location.href = targetUrl + separator + "scan=" + encodeURIComponent(decodedText);
+}
+
+const html5QrCode = new Html5Qrcode("reader");
+
+Html5Qrcode.getCameras().then(cameras => {
+    if (cameras && cameras.length) {
+        html5QrCode.start(
+            { facingMode: "environment" },
+            {
+                fps: 10,
+                qrbox: { width: 250, height: 250 }
+            },
+            onScanSuccess
+        );
+    }
+}).catch(err => {
+    alert("Kameru se nepodařilo spustit: " + err);
+});
+</script>
+{% endblock %}
