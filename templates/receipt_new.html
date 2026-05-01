@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Nová příjemka na sklad</h2>
+
+<form method="post" class="card-form">
+    <label>
+        Typ příjmu
+        <select name="source_type" id="source_type" onchange="toggleOrderSelect()">
+            <option value="new_purchase">Nově pořízený materiál</option>
+            <option value="return_from_order">Vratka ze zakázky</option>
+        </select>
+    </label>
+
+    <div id="order-box" style="display:none;">
+        <label>
+            Zakázka pro vratku
+            <select name="order_number">
+                {% for order in orders %}
+                    <option value="{{ order.order_number }}">
+                        {{ order.order_number }} - {{ order.name }}{% if order.status == "closed" %} (ukončená){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+
+    <button type="submit">Pokračovat</button>
+</form>
+
+{% if not orders %}
+<p>Zatím nejsou založené žádné zakázky. Pro vratku ze zakázky nejprve založ zakázku.</p>
+{% endif %}
+
+<script>
+function toggleOrderSelect() {
+    const source = document.getElementById("source_type").value;
+    document.getElementById("order-box").style.display = source === "return_from_order" ? "block" : "none";
+}
+toggleOrderSelect();
+</script>
+{% endblock %}

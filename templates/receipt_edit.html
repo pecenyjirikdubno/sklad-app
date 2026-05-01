@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Příjemka na sklad</h2>
+
+{% if source_type == "return_from_order" %}
+    <p><strong>Typ:</strong> Vratka ze zakázky</p>
+    <p><strong>Zakázka:</strong> {{ order_number }} - {{ order_name }}</p>
+{% else %}
+    <p><strong>Typ:</strong> Nově pořízený materiál</p>
+{% endif %}
+
+<form method="post" class="card-form" id="receipt-add-form">
+    <label>
+        QR / ID materiálu
+        <input
+            id="scan_input"
+            name="scan_value"
+            value="{{ request.args.get('scan', '') }}"
+            placeholder="Naskenuj QR nebo zadej JZ00001"
+            autofocus
+            required
+        >
+    </label>
+
+    <div id="material_preview" style="margin: 8px 0 14px 0; font-weight: bold;"></div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin:10px 0;">
+        <button type="button" id="start-scanner">Načíst QR kamerou</button>
+        <button type="button" id="stop-scanner" style="display:none;">Vypnout kameru</button>
+    </div>
+
+    <div id="reader" style="width:100%; max-width:420px; display:none; margin:10px 0;"></div>
+
+    <label>
+        Množství
+        <input id="quantity_input" type="number" step="0.001" min="0.001" name="quantity" required>
+    </label>
+
+    <button type="submit">Přidat položku</button>
+</form>
+
+<div id="receipt_message" style="margin: 12px 0; font-weight:bold;"></div>
+
+<h3>Položky příjemky</h3>
+
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>ID Materiálu</th>
+            <th>ID výrobce</th>
+            <th>Název</th>
+            <th>Množství</th>
+            <th>Mn.j.</th>
+            <th>Akce</th>
+        </tr>
+    </thead>
+    <tbody id="receipt-items-body">
+    {% for item in items %}
+        <tr>
+            <td>{{ item.material_code }}</td>
+            <td>{{ item.manufacturer_id }}</td>
+            <td>{{ item.name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.unit }}</td>
+            <td>
+                <form method="post" action="{{ url_for('receipt_slip_remove', index=loop.index0) }}">
+                    <button type="submit">Odebrat</button>
+                </form>
+            </td>
+        </tr>
+    {% else %}
+        <tr id="empty-row"><td colspan="6">Zatím nejsou přidané žádné položky.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<form method="post" action="{{ url_for('receipt_slip_confirm') }}" id="confirm-form" {% if not items %}style="display:none;"{% endif %}>
+    <button type="submit">Potvrdit příjemku</button>
+</form>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+let qrScanner = null;
+let scannerRunning = false;
+
+function showMessage(message, ok = true) {
+    const box = document.getElementById("receipt_message");
+    box.innerHTML = message || "";
+    box.style.color = ok ? "green" : "red";
+}
+
+async function loadMaterialPreview(value) {
+    const preview = document.getElementById("material_preview");
+
+    if (!value || value.trim() === "") {
+        preview.innerHTML = "";
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/material_lookup?q=" + encodeURIComponent(value));
+        const data = await response.json();
+
+        if (data.found) {
+            preview.innerHTML = "📦 " + data.name + " (" + data.material_id + ")";
+            preview.style.color = "green";
+        } else {
+            preview.innerHTML = "❌ Materiál nenalezen";
+            preview.style.color = "red";
+        }
+    } catch (error) {
+        preview.innerHTML = "❌ Chyba při načítání materiálu";
+        preview.style.color = "red";
+    }
+}
+
+function renderItems(items) {
+    const tbody = document.getElementById("receipt-items-body");
+    const confirmForm = document.getElementById("confirm-form");
+
+    if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr id="empty-row"><td colspan="6">Zatím nejsou přidané žádné položky.</td></tr>';
+        confirmForm.style.display = "none";
+        return;
+    }
+
+    tbody.innerHTML = items.map((item, index) => `
+        <tr>
+            <td>${item.material_code || ""}</td>
+            <td>${item.manufacturer_id || ""}</td>
+            <td>${item.name || ""}</td>
+            <td>${item.quantity || 0}</td>
+            <td>${item.unit || ""}</td>
+            <td>
+                <form method="post" action="/receipt/remove/${index}">
+                    <button type="submit">Odebrat</button>
+                </form>
+            </td>
+        </tr>
+    `).join("");
+
+    confirmForm.style.display = "block";
+}
+
+async function addReceiptItemNoRefresh(event) {
+    event.preventDefault();
+
+    const scanInput = document.getElementById("scan_input");
+    const quantityInput = document.getElementById("quantity_input");
+
+    const formData = new FormData();
+    formData.append("scan_value", scanInput.value);
+    formData.append("quantity", quantityInput.value);
+
+    try {
+        const response = await fetch("/api/receipt/add", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            showMessage(data.message || "Položku se nepodařilo přidat.", false);
+            return;
+        }
+
+        renderItems(data.items);
+        showMessage(data.message || "Položka přidána.", true);
+
+        scanInput.value = "";
+        quantityInput.value = "";
+        document.getElementById("material_preview").innerHTML = "";
+        scanInput.focus();
+    } catch (error) {
+        showMessage("Chyba při přidávání položky.", false);
+    }
+}
+
+async function startScanner() {
+    const reader = document.getElementById("reader");
+    const startButton = document.getElementById("start-scanner");
+    const stopButton = document.getElementById("stop-scanner");
+
+    reader.style.display = "block";
+    startButton.style.display = "none";
+    stopButton.style.display = "inline-block";
+
+    if (!qrScanner) {
+        qrScanner = new Html5Qrcode("reader");
+    }
+
+    scannerRunning = true;
+
+    try {
+        await qrScanner.start(
+            { facingMode: "environment" },
+            {
+                fps: 10,
+                qrbox: { width: 250, height: 250 }
+            },
+            async function(decodedText) {
+                const scanInput = document.getElementById("scan_input");
+                scanInput.value = decodedText;
+                await loadMaterialPreview(decodedText);
+
+                const quantityInput = document.getElementById("quantity_input");
+                quantityInput.focus();
+            }
+        );
+    } catch (error) {
+        showMessage("Kameru se nepodařilo spustit: " + error, false);
+        stopScanner();
+    }
+}
+
+async function stopScanner() {
+    const reader = document.getElementById("reader");
+    const startButton = document.getElementById("start-scanner");
+    const stopButton = document.getElementById("stop-scanner");
+
+    if (qrScanner && scannerRunning) {
+        try {
+            await qrScanner.stop();
+        } catch (e) {}
+    }
+
+    scannerRunning = false;
+    reader.style.display = "none";
+    startButton.style.display = "inline-block";
+    stopButton.style.display = "none";
+}
+
+const scanInput = document.getElementById("scan_input");
+scanInput.addEventListener("input", function () { loadMaterialPreview(scanInput.value); });
+scanInput.addEventListener("change", function () { loadMaterialPreview(scanInput.value); });
+
+document.getElementById("receipt-add-form").addEventListener("submit", addReceiptItemNoRefresh);
+document.getElementById("start-scanner").addEventListener("click", startScanner);
+document.getElementById("stop-scanner").addEventListener("click", stopScanner);
+
+loadMaterialPreview(scanInput.value);
+</script>
+
+{% endblock %}

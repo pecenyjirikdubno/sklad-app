@@ -31,11 +31,13 @@
     <nav>
         <a href="{{ url_for('index') }}">Přehled</a>
         <a href="{{ url_for('issue_slip_new') }}">Výdejka</a>
+        <a href="{{ url_for('receipt_slip_new') }}">Příjemka</a>
 
         {% if current_user.role == 'admin' %}
             <a href="{{ url_for('add_material') }}">Přidat</a>
             <a href="{{ url_for('orders') }}">Zakázky</a>
             <a href="{{ url_for('issue_slip_list') }}">Výdejky</a>
+            <a href="{{ url_for('receipt_slip_list') }}">Příjemky</a>
             <a href="{{ url_for('import_excel') }}">Import</a>
             <a href="{{ url_for('export_excel') }}">Export</a>
             <a href="{{ url_for('users') }}">Uživatelé</a>
@@ -62,6 +64,7 @@
 <nav class="mobile-bottom-nav">
     <a href="{{ url_for('index') }}"><span>🏠</span>Přehled</a>
     <a href="{{ url_for('issue_slip_new') }}"><span>📦</span>Výdejka</a>
+    <a href="{{ url_for('receipt_slip_new') }}"><span>📥</span>Příjemka</a>
     <a href="{{ url_for('qr_scan', next=url_for('issue_slip_edit')) }}"><span>📷</span>QR</a>
 
     {% if current_user.role == 'admin' %}

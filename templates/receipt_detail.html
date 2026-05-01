@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Příjemka {{ slip.receipt_number }}</h2>
+
+{% if slip.source_type == "return_from_order" %}
+    <p><strong>Typ:</strong> Vratka ze zakázky</p>
+    <p><strong>Zakázka:</strong> {{ slip.order_number }} - {{ slip.order_name }}</p>
+{% else %}
+    <p><strong>Typ:</strong> Nově pořízený materiál</p>
+{% endif %}
+
+<p><strong>Přijal:</strong> {{ slip.username }}</p>
+<p><strong>Datum:</strong> {{ slip.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+<p><a class="button-link" href="{{ url_for('receipt_slip_pdf', receipt_id=slip.id) }}">Stáhnout PDF</a></p>
+
+<div class="table-wrap">
+<table>
+    <thead><tr><th>ID Materiálu</th><th>ID výrobce</th><th>Název</th><th>Množství</th><th>Mn.j.</th></tr></thead>
+    <tbody>
+    {% for item in slip.items %}
+        <tr>
+            <td>{{ item.material_code }}</td>
+            <td>{{ item.manufacturer_id }}</td>
+            <td>{{ item.material_name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.unit }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

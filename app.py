@@ -98,6 +98,29 @@ class IssueSlipItem(db.Model):
     issue_slip = db.relationship("IssueSlip", backref="items")
 
 
+class ReceiptSlip(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    receipt_number = db.Column(db.String(30), unique=True, nullable=False)
+    source_type = db.Column(db.String(30), nullable=False, default="new_purchase")
+    order_number = db.Column(db.String(30), default="")
+    order_name = db.Column(db.String(255), default="")
+    username = db.Column(db.String(80), default="")
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+
+class ReceiptSlipItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    receipt_slip_id = db.Column(db.Integer, db.ForeignKey("receipt_slip.id"), nullable=False)
+    material_id_db = db.Column(db.Integer)
+    material_code = db.Column(db.String(30), default="")
+    manufacturer_id = db.Column(db.String(100), default="")
+    material_name = db.Column(db.String(255), default="")
+    quantity = db.Column(db.Float, default=0)
+    unit = db.Column(db.String(50), default="")
+
+    receipt_slip = db.relationship("ReceiptSlip", backref="items")
+
+
 # =========================
 # AUTH
 # =========================
@@ -172,6 +195,12 @@ def generate_issue_slip_number():
     return f"{prefix}{count:02d}"
 
 
+def generate_receipt_slip_number():
+    prefix = "PRI" + datetime.now().strftime("%Y%m%d")
+    count = ReceiptSlip.query.filter(ReceiptSlip.receipt_number.startswith(prefix)).count() + 1
+    return f"{prefix}{count:02d}"
+
+
 def material_from_scan(value):
     value = (value or "").strip()
     if not value:
@@ -217,6 +246,55 @@ def build_issue_pdf(slip):
             str(item.quantity or 0),
             item.unit or ""
         ])
+    table = Table(data, colWidths=[30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def build_receipt_pdf(slip):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=15 * mm,
+        leftMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm
+    )
+    styles = getSampleStyleSheet()
+
+    if slip.source_type == "return_from_order":
+        source_text = f"Vratka ze zakázky: {slip.order_number} - {slip.order_name}"
+    else:
+        source_text = "Nově pořízený materiál"
+
+    story = [
+        Paragraph(f"Příjemka č. {slip.receipt_number}", styles["Title"]),
+        Spacer(1, 8),
+        Paragraph(f"Typ příjmu: {source_text}", styles["Normal"]),
+        Paragraph(f"Přijal: {slip.username}", styles["Normal"]),
+        Paragraph(f"Datum: {slip.created_at.strftime('%d.%m.%Y %H:%M')}", styles["Normal"]),
+        Spacer(1, 12)
+    ]
+
+    data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+    for item in slip.items:
+        data.append([
+            item.material_code or "",
+            item.manufacturer_id or "",
+            item.material_name or "",
+            str(item.quantity or 0),
+            item.unit or ""
+        ])
+
     table = Table(data, colWidths=[30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
@@ -942,7 +1020,7 @@ def issue_slip_pdf(slip_id):
     return send_file(pdf, download_name=f"{slip.slip_number}.pdf", as_attachment=True, mimetype="application/pdf")
 
 
-# =========================
+# =========================\n# PŘÍJEMKA NA SKLAD\n# =========================\n\n@app.route("/receipts")\n@login_required\n@admin_required\ndef receipt_slip_list():\n    selected_order = request.args.get("order_number", "").strip()\n    selected_source = request.args.get("source_type", "").strip()\n\n    query = ReceiptSlip.query\n    if selected_order:\n        query = query.filter_by(order_number=selected_order)\n    if selected_source:\n        query = query.filter_by(source_type=selected_source)\n\n    receipts = query.order_by(ReceiptSlip.created_at.desc()).all()\n    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()\n\n    return render_template(\n        "receipt_list.html",\n        receipts=receipts,\n        orders=orders,\n        selected_order=selected_order,\n        selected_source=selected_source\n    )\n\n\n@app.route("/receipt", methods=["GET", "POST"])\n@login_required\ndef receipt_slip_new():\n    if request.method == "POST":\n        source_type = request.form.get("source_type") or "new_purchase"\n        order_number = ""\n        order_name = ""\n\n        if source_type == "return_from_order":\n            order_number = request.form.get("order_number") or ""\n            order = JobOrder.query.filter_by(order_number=order_number).first()\n            if not order:\n                flash("Vyber existující zakázku pro vratku.", "danger")\n                return redirect(url_for("receipt_slip_new"))\n            order_name = order.name\n        else:\n            source_type = "new_purchase"\n\n        session["receipt_source_type"] = source_type\n        session["receipt_order_number"] = order_number\n        session["receipt_order_name"] = order_name\n        session["receipt_items"] = []\n        session.modified = True\n        return redirect(url_for("receipt_slip_edit"))\n\n    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()\n    return render_template("receipt_new.html", orders=orders)\n\n\n@app.route("/receipt/edit", methods=["GET", "POST"])\n@login_required\ndef receipt_slip_edit():\n    source_type = session.get("receipt_source_type")\n    order_number = session.get("receipt_order_number", "")\n    order_name = session.get("receipt_order_name", "")\n    items = list(session.get("receipt_items", []))\n\n    if not source_type:\n        flash("Nejprve zvol typ příjmu.", "warning")\n        return redirect(url_for("receipt_slip_new"))\n\n    if request.method == "POST":\n        material = material_from_scan(request.form.get("scan_value"))\n        quantity = clean_float(request.form.get("quantity"))\n\n        if not material:\n            flash("Materiál nebyl nalezen.", "danger")\n            return redirect(url_for("receipt_slip_edit"))\n\n        if quantity <= 0:\n            flash("Množství musí být větší než 0.", "danger")\n            return redirect(url_for("receipt_slip_edit"))\n\n        existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)\n        if existing_item:\n            existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity\n        else:\n            items.append({\n                "material_db_id": material.id,\n                "material_code": material.material_id,\n                "manufacturer_id": material.manufacturer_id or "",\n                "name": material.name or "",\n                "quantity": quantity,\n                "unit": material.unit or ""\n            })\n\n        session["receipt_items"] = items\n        session.modified = True\n\n        flash("Položka přidána do příjemky.", "success")\n        return redirect(url_for("receipt_slip_edit"))\n\n    return render_template(\n        "receipt_edit.html",\n        source_type=source_type,\n        order_number=order_number,\n        order_name=order_name,\n        items=items\n    )\n\n\n@app.route("/api/receipt/add", methods=["POST"])\n@login_required\ndef api_receipt_add():\n    source_type = session.get("receipt_source_type")\n    if not source_type:\n        return {"ok": False, "message": "Nejprve zvol typ příjmu."}, 400\n\n    material = material_from_scan(request.form.get("scan_value"))\n    quantity = clean_float(request.form.get("quantity"))\n    items = list(session.get("receipt_items", []))\n\n    if not material:\n        return {"ok": False, "message": "Materiál nebyl nalezen."}, 404\n\n    if quantity <= 0:\n        return {"ok": False, "message": "Množství musí být větší než 0."}, 400\n\n    existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)\n    if existing_item:\n        existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity\n    else:\n        items.append({\n            "material_db_id": material.id,\n            "material_code": material.material_id,\n            "manufacturer_id": material.manufacturer_id or "",\n            "name": material.name or "",\n            "quantity": quantity,\n            "unit": material.unit or ""\n        })\n\n    session["receipt_items"] = items\n    session.modified = True\n\n    return {\n        "ok": True,\n        "message": "Položka přidána do příjemky.",\n        "items": items,\n        "material": {\n            "material_id": material.material_id,\n            "name": material.name,\n            "quantity": material.quantity,\n            "unit": material.unit\n        }\n    }\n\n\n@app.route("/receipt/remove/<int:index>", methods=["POST"])\n@login_required\ndef receipt_slip_remove(index):\n    items = list(session.get("receipt_items", []))\n    if 0 <= index < len(items):\n        items.pop(index)\n        session["receipt_items"] = items\n        session.modified = True\n    return redirect(url_for("receipt_slip_edit"))\n\n\n@app.route("/receipt/confirm", methods=["POST"])\n@login_required\ndef receipt_slip_confirm():\n    source_type = session.get("receipt_source_type")\n    order_number = session.get("receipt_order_number", "")\n    order_name = session.get("receipt_order_name", "")\n    items = list(session.get("receipt_items", []))\n\n    if not source_type or not items:\n        flash("Příjemka nemá typ příjmu nebo položky.", "danger")\n        return redirect(url_for("receipt_slip_new"))\n\n    if source_type == "return_from_order":\n        order = JobOrder.query.filter_by(order_number=order_number).first()\n        if not order:\n            flash("Zakázka pro vratku neexistuje.", "danger")\n            return redirect(url_for("receipt_slip_new"))\n        order_name = order.name\n    else:\n        source_type = "new_purchase"\n        order_number = ""\n        order_name = ""\n\n    for item in items:\n        material = db.session.get(Material, item["material_db_id"])\n        if not material:\n            flash(f"Chybějící materiál {item['material_code']}", "danger")\n            return redirect(url_for("receipt_slip_edit"))\n\n    slip = ReceiptSlip(\n        receipt_number=generate_receipt_slip_number(),\n        source_type=source_type,\n        order_number=order_number,\n        order_name=order_name,\n        username=current_user().username\n    )\n    db.session.add(slip)\n    db.session.flush()\n\n    movement_order_number = order_number if source_type == "return_from_order" else "Nově pořízený materiál"\n\n    for item in items:\n        material = db.session.get(Material, item["material_db_id"])\n        quantity = clean_float(item["quantity"])\n        material.quantity += quantity\n\n        db.session.add(StockMovement(\n            material_id=material.id,\n            movement_type="prijem",\n            quantity=quantity,\n            username=current_user().username,\n            order_number=movement_order_number\n        ))\n\n        db.session.add(ReceiptSlipItem(\n            receipt_slip_id=slip.id,\n            material_id_db=material.id,\n            material_code=material.material_id,\n            manufacturer_id=material.manufacturer_id or "",\n            material_name=material.name or "",\n            quantity=quantity,\n            unit=material.unit or ""\n        ))\n\n    db.session.commit()\n\n    session.pop("receipt_source_type", None)\n    session.pop("receipt_order_number", None)\n    session.pop("receipt_order_name", None)\n    session.pop("receipt_items", None)\n    session.modified = True\n\n    flash(f"Příjemka {slip.receipt_number} vytvořena.", "success")\n    return redirect(url_for("receipt_slip_detail", receipt_id=slip.id))\n\n\n@app.route("/receipt/<int:receipt_id>")\n@login_required\ndef receipt_slip_detail(receipt_id):\n    slip = ReceiptSlip.query.get_or_404(receipt_id)\n    return render_template("receipt_detail.html", slip=slip)\n\n\n@app.route("/receipt/<int:receipt_id>/pdf")\n@login_required\ndef receipt_slip_pdf(receipt_id):\n    slip = ReceiptSlip.query.get_or_404(receipt_id)\n    pdf = build_receipt_pdf(slip)\n    return send_file(pdf, download_name=f"{slip.receipt_number}.pdf", as_attachment=True, mimetype="application/pdf")\n\n\n# =========================
 # SPRÁVA UŽIVATELŮ - ADMIN
 # =========================
 

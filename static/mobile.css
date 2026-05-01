@@ -101,7 +101,7 @@ select {
   .mobile-bottom-nav {
     position: fixed;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     left: 0;
     right: 0;
     bottom: 0;
