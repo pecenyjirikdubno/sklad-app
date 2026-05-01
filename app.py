@@ -714,7 +714,7 @@ def issue_slip_new():
 def issue_slip_edit():
     order_number = session.get("issue_order_number")
     order_name = session.get("issue_order_name")
-    items = session.get("issue_items", [])
+    items = list(session.get("issue_items", []))
 
     if not order_number:
         flash("Nejprve vyber zakázku.", "warning")
@@ -732,10 +732,80 @@ def issue_slip_edit():
             flash("Množství musí být větší než 0.", "danger")
             return redirect(url_for("issue_slip_edit"))
 
-        if quantity > material.quantity:
-            flash(f"Nedostatek na skladě: {material.material_id} má skladem {material.quantity} {material.unit}", "danger")
+        already_in_slip = sum(
+            clean_float(item.get("quantity"))
+            for item in items
+            if item.get("material_db_id") == material.id
+        )
+
+        if already_in_slip + quantity > material.quantity:
+            flash(
+                f"Nedostatek na skladě: {material.material_id} má skladem {material.quantity} {material.unit}, "
+                f"ve výdejce už je {already_in_slip} {material.unit}.",
+                "danger"
+            )
             return redirect(url_for("issue_slip_edit"))
 
+        existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)
+
+        if existing_item:
+            existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity
+        else:
+            items.append({
+                "material_db_id": material.id,
+                "material_code": material.material_id,
+                "manufacturer_id": material.manufacturer_id or "",
+                "name": material.name or "",
+                "quantity": quantity,
+                "unit": material.unit or ""
+            })
+
+        session["issue_items"] = items
+        session.modified = True
+
+        flash("Položka přidána do výdejky.", "success")
+        return redirect(url_for("issue_slip_edit"))
+
+    return render_template("issue_edit.html", order_number=order_number, order_name=order_name, items=items)
+
+
+@app.route("/api/issue/add", methods=["POST"])
+@login_required
+def api_issue_add():
+    order_number = session.get("issue_order_number")
+    if not order_number:
+        return {"ok": False, "message": "Nejprve vyber zakázku."}, 400
+
+    material = material_from_scan(request.form.get("scan_value"))
+    quantity = clean_float(request.form.get("quantity"))
+    items = list(session.get("issue_items", []))
+
+    if not material:
+        return {"ok": False, "message": "Materiál nebyl nalezen."}, 404
+
+    if quantity <= 0:
+        return {"ok": False, "message": "Množství musí být větší než 0."}, 400
+
+    already_in_slip = sum(
+        clean_float(item.get("quantity"))
+        for item in items
+        if item.get("material_db_id") == material.id
+    )
+
+    if already_in_slip + quantity > material.quantity:
+        return {
+            "ok": False,
+            "message": (
+                f"Nedostatek na skladě: {material.material_id} má skladem {material.quantity} {material.unit}, "
+                f"ve výdejce už je {already_in_slip} {material.unit}."
+            )
+        }, 400
+
+    existing_item = next((item for item in items if item.get("material_db_id") == material.id), None)
+
+    if existing_item:
+        existing_item["quantity"] = clean_float(existing_item.get("quantity")) + quantity
+    else:
         items.append({
             "material_db_id": material.id,
             "material_code": material.material_id,
@@ -744,11 +814,22 @@ def issue_slip_edit():
             "quantity": quantity,
             "unit": material.unit or ""
         })
-        session["issue_items"] = items
-        flash("Položka přidána do výdejky.", "success")
-        return redirect(url_for("issue_slip_edit"))
 
-    return render_template("issue_edit.html", order_number=order_number, order_name=order_name, items=items)
+    session["issue_items"] = items
+    session.modified = True
+
+    return {
+        "ok": True,
+        "message": "Položka přidána do výdejky.",
+        "items": items,
+        "material": {
+            "material_id": material.material_id,
+            "name": material.name,
+            "quantity": material.quantity,
+            "unit": material.unit
+        }
+    }
+
 
 
 @app.route("/issue/remove/<int:index>", methods=["POST"])
