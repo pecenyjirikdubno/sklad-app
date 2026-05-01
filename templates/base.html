@@ -1,8 +1,7 @@
 <title>Sklad materiálu</title>
 
 <!-- CSS -->
-<link rel="sty
-lesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 
 <!-- Favicon -->
@@ -19,13 +18,13 @@ lesheet" href="{{ url_for('static', filename='style.css') }}">
 {% if current_user %}
 <nav>
     <a href="{{ url_for('index') }}">Přehled</a>
-    <a href="{{ url_for('issue_slip_new') }}">Výdejka do zakázky</a>
+    <a href="{{ url_for('issue_slip_new') }}">Výdejka</a>
 
     {% if current_user.role == 'admin' %}
         <a href="{{ url_for('add_material') }}">Přidat</a>
         <a href="{{ url_for('orders') }}">Zakázky</a>
-        <a href="{{ url_for('import_excel') }}">Import Excel</a>
-        <a href="{{ url_for('export_excel') }}">Export Excel</a>
+        <a href="{{ url_for('import_excel') }}">Import</a>
+        <a href="{{ url_for('export_excel') }}">Export</a>
         <a href="{{ url_for('users') }}">Uživatelé</a>
         <a href="{{ url_for('issue_slip_list') }}">Výdejky</a>
     {% endif %}
@@ -37,24 +36,8 @@ lesheet" href="{{ url_for('static', filename='style.css') }}">
 
 {% if current_user %}
 
-<a href="{{ url_for('issue_slip_new') }}">
-    <span>📦</span>
-    Výdejka
-</a>
-
-<a href="{{ url_for('qr_scan', next=url_for('issue_slip_edit')) }}">
-    <span>📷</span>
-    QR
-</a>
-
 {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('orders') }}">
-        <span>🧾</span>
-        Zakázky
-    </a>
+    <a href="{{ url_for('orders') }}"><span>🧾</span>Zakázky</a>
 {% else %}
-    <a href="{{ url_for('logout') }}">
-        <span>🚪</span>
-        Odhlásit
-    </a>
+    <a href="{{ url_for('logout') }}"><span>🚪</span>Odhlásit</a>
 {% endif %}
