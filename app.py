@@ -888,7 +888,120 @@ def import_excel():
     db.session.commit()
     flash(f"Import hotov. Přidáno: {imported}, aktualizováno: {updated}, přeskočeno: {skipped}", "success")
     return redirect(url_for("index"))
+# =========================
+# SPRÁVA UŽIVATELŮ
+# =========================
+# =========================
+# USER MANAGEMENT (ADMIN)
+# =========================
 
+@app.route("/users")
+@login_required
+@admin_required
+def users():
+    users = User.query.order_by(User.username).all()
+    return render_template("users.html", users=users)
+
+
+@app.route("/users/new", methods=["GET", "POST"])
+@login_required
+@admin_required
+def user_new():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        role = request.form.get("role")
+
+        if not username or not password:
+            flash("Vyplň vše")
+            return redirect(url_for("user_new"))
+
+        if User.query.filter_by(username=username).first():
+            flash("Uživatel již existuje")
+            return redirect(url_for("user_new"))
+
+        db.session.add(User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            role=role
+        ))
+        db.session.commit()
+
+        flash("Uživatel vytvořen")
+        return redirect(url_for("users"))
+
+    return render_template("user_form.html")
+
+
+@app.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def user_edit(user_id):
+    u = User.query.get_or_404(user_id)
+
+    if request.method == "POST":
+        u.username = request.form.get("username")
+        new_role = request.form.get("role")
+
+        # ochrana posledního admina
+        if u.role == "admin" and new_role != "admin":
+            admins = User.query.filter_by(role="admin").count()
+            if admins <= 1:
+                flash("Nelze odebrat posledního admina")
+                return redirect(url_for("users"))
+
+        u.role = new_role
+
+        db.session.commit()
+        flash("Uživatel upraven")
+        return redirect(url_for("users"))
+
+    return render_template("user_form.html", user=u)
+
+
+@app.route("/users/<int:user_id>/password", methods=["GET", "POST"])
+@login_required
+@admin_required
+def user_password(user_id):
+    u = User.query.get_or_404(user_id)
+
+    if request.method == "POST":
+        password = request.form.get("password")
+
+        if not password:
+            flash("Zadej heslo")
+            return redirect(url_for("user_password", user_id=user_id))
+
+        u.password_hash = generate_password_hash(password)
+        db.session.commit()
+
+        flash("Heslo změněno")
+        return redirect(url_for("users"))
+
+    return render_template("user_password.html", user=u)
+
+
+@app.route("/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def user_delete(user_id):
+    u = User.query.get_or_404(user_id)
+
+    if u.id == current_user().id:
+        flash("Nemůžeš smazat sám sebe")
+        return redirect(url_for("users"))
+
+    if u.role == "admin":
+        admins = User.query.filter_by(role="admin").count()
+        if admins <= 1:
+            flash("Nelze smazat posledního admina")
+            return redirect(url_for("users"))
+
+    db.session.delete(u)
+    db.session.commit()
+
+    flash("Uživatel smazán")
+    return redirect(url_for("users"))
 
 # =========================
 # INIT

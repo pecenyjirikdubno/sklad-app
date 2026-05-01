@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>{{ "Upravit uživatele" if user else "Nový uživatel" }}</h2>
+
+<form method="post">
+
+    <label>Uživatel</label>
+    <input name="username" value="{{ user.username if user else '' }}" required>
+
+    {% if not user %}
+    <label>Heslo</label>
+    <input type="password" name="password" required>
+    {% endif %}
+
+    <label>Role</label>
+    <select name="role">
+        <option value="user" {% if user and user.role=='user' %}selected{% endif %}>User</option>
+        <option value="admin" {% if user and user.role=='admin' %}selected{% endif %}>Admin</option>
+    </select>
+
+    <button>Uložit</button>
+</form>
+
+{% endblock %}
