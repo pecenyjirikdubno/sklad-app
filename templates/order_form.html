@@ -1,12 +1,9 @@
 {% extends "base.html" %}
-
 {% block content %}
 <h2>Založit novou zakázku</h2>
 
-<form method="post" class="form-card">
-    <label>Název zakázky</label>
-    <input name="name" required>
-
+<form method="post" class="card-form">
+    <label>Název zakázky<input name="name" required></label>
     <button type="submit">Založit zakázku</button>
 </form>
 

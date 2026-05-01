@@ -1,5 +1,19 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}
+{% block content %}
 <h2>Nová výdejka do zakázky</h2>
-<form method="post"><label>Vyber zakázku</label><select name="order_number" required>{% for order in orders %}<option value="{{ order.order_number }}">{{ order.order_number }} - {{ order.name }}</option>{% endfor %}</select><button>Pokračovat</button></form>
-{% if not orders %}<p>Zatím nejsou založené žádné zakázky.</p>{% endif %}
+
+<form method="post" class="card-form">
+    <label>Vyber zakázku
+        <select name="order_number" required>
+            {% for order in orders %}
+                <option value="{{ order.order_number }}">{{ order.order_number }} - {{ order.name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <button type="submit">Pokračovat</button>
+</form>
+
+{% if not orders %}
+<p>Zatím nejsou založené žádné aktivní zakázky. Admin může zakázku založit v menu Zakázky.</p>
+{% endif %}
 {% endblock %}

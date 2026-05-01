@@ -1,7 +1,42 @@
-{% extends "base.html" %}{% block content %}
-<h2>Výdejka do zakázky</h2><p><strong>Zakázka:</strong> {{ order_number }} - {{ order_name }}</p>
-<form method="post"><label>QR / ID materiálu</label><input name="scan_value" placeholder="Naskenuj QR nebo zadej JZ00001" autofocus required><label>Množství</label><input type="number" step="0.01" name="quantity" required><button>Přidat položku</button></form>
-<h3>Položky výdejky</h3><table><tr><th>ID Materiálu</th><th>ID výrobce</th><th>Název</th><th>Množství</th><th>Mn.j.</th><th>Akce</th></tr>
-{% for item in items %}<tr><td>{{ item.material_code }}</td><td>{{ item.manufacturer_id }}</td><td>{{ item.name }}</td><td>{{ item.quantity }}</td><td>{{ item.unit }}</td><td><form method="post" action="{{ url_for('issue_slip_remove', index=loop.index0) }}"><button>Odebrat</button></form></td></tr>{% else %}<tr><td colspan="6">Zatím nejsou přidané žádné položky.</td></tr>{% endfor %}
-</table>{% if items %}<form method="post" action="{{ url_for('issue_slip_confirm') }}"><button>Potvrdit výdejku</button></form>{% endif %}
+{% extends "base.html" %}
+{% block content %}
+<h2>Výdejka do zakázky</h2>
+<p><strong>Zakázka:</strong> {{ order_number }} - {{ order_name }}</p>
+
+<form method="post" class="card-form">
+    <label>QR / ID materiálu<input name="scan_value" placeholder="Naskenuj QR nebo zadej JZ00001" autofocus required></label>
+    <label>Množství<input type="number" step="0.001" min="0.001" name="quantity" required></label>
+    <button type="submit">Přidat položku</button>
+</form>
+
+<h3>Položky výdejky</h3>
+<div class="table-wrap">
+<table>
+    <thead><tr><th>ID Materiálu</th><th>ID výrobce</th><th>Název</th><th>Množství</th><th>Mn.j.</th><th>Akce</th></tr></thead>
+    <tbody>
+    {% for item in items %}
+        <tr>
+            <td>{{ item.material_code }}</td>
+            <td>{{ item.manufacturer_id }}</td>
+            <td>{{ item.name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.unit }}</td>
+            <td>
+                <form method="post" action="{{ url_for('issue_slip_remove', index=loop.index0) }}">
+                    <button type="submit">Odebrat</button>
+                </form>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="6">Zatím nejsou přidané žádné položky.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% if items %}
+<form method="post" action="{{ url_for('issue_slip_confirm') }}">
+    <button type="submit">Potvrdit výdejku</button>
+</form>
+{% endif %}
 {% endblock %}

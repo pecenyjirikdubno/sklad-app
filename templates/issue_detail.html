@@ -1,4 +1,19 @@
-{% extends "base.html" %}{% block content %}
-<h2>Výdejka {{ slip.slip_number }}</h2><p><strong>Zakázka:</strong> {{ slip.order_number }} - {{ slip.order_name }}</p><p><strong>Vydal:</strong> {{ slip.username }}</p><p><strong>Datum:</strong> {{ slip.created_at.strftime('%d.%m.%Y %H:%M') }}</p><p><a href="{{ url_for('issue_slip_pdf', slip_id=slip.id) }}">Stáhnout PDF</a></p>
-<table><tr><th>ID Materiálu</th><th>ID výrobce</th><th>Název</th><th>Množství</th><th>Mn.j.</th></tr>{% for item in slip.items %}<tr><td>{{ item.material_code }}</td><td>{{ item.manufacturer_id }}</td><td>{{ item.material_name }}</td><td>{{ item.quantity }}</td><td>{{ item.unit }}</td></tr>{% endfor %}</table>
+{% extends "base.html" %}
+{% block content %}
+<h2>Výdejka {{ slip.slip_number }}</h2>
+<p><strong>Zakázka:</strong> {{ slip.order_number }} - {{ slip.order_name }}</p>
+<p><strong>Vydal:</strong> {{ slip.username }}</p>
+<p><strong>Datum:</strong> {{ slip.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+<p><a class="button-link" href="{{ url_for('issue_slip_pdf', slip_id=slip.id) }}">Stáhnout PDF</a></p>
+
+<div class="table-wrap">
+<table>
+    <thead><tr><th>ID Materiálu</th><th>ID výrobce</th><th>Název</th><th>Množství</th><th>Mn.j.</th></tr></thead>
+    <tbody>
+    {% for item in slip.items %}
+        <tr><td>{{ item.material_code }}</td><td>{{ item.manufacturer_id }}</td><td>{{ item.material_name }}</td><td>{{ item.quantity }}</td><td>{{ item.unit }}</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
 {% endblock %}

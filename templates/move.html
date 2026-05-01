@@ -4,17 +4,50 @@
     <h2>Pohyb materiálu</h2>
     <p><strong>{{ item.material_id }}</strong> — {{ item.name }}</p>
     <p>Aktuálně skladem: <strong>{{ item.quantity }} {{ item.unit }}</strong></p>
+
     <form method="post" class="card-form">
-        <label>Typ pohybu
-            <select name="movement_type" required>
-                <option value="prijem">Naskladnit / příjem</option>
-                <option value="vydej">Vyskladnit / výdej</option>
-            </select>
-        </label>
+        <input type="hidden" name="type" id="movement_type" value="in">
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;">
+            <button type="button" id="btn-in" onclick="setType('in')" style="background:#16a34a;color:white;">Naskladnit / příjem</button>
+            <button type="button" id="btn-out" onclick="setType('out')" style="background:#dc2626;color:white;">Vyskladnit / výdej</button>
+        </div>
+
         <label>Měněné množství<input name="quantity" type="number" step="0.001" min="0.001" required></label>
-        <label>Zakázka<input name="order_number" placeholder="např. ZAK-2026-001"></label>
-        <label>Poznámka<input name="note"></label>
+
+        <div id="issue-box" style="display:none;">
+            <h3>Vydáno</h3>
+            <label><input type="radio" name="issued_to" value="internal" checked> Vlastní spotřeba</label>
+            <label><input type="radio" name="issued_to" value="existing"> Existující zakázka</label>
+            <select name="order_number">
+                {% for order in orders %}
+                    <option value="{{ order.order_number }}">{{ order.order_number }} - {{ order.name }}</option>
+                {% endfor %}
+            </select>
+            <label><input type="radio" name="issued_to" value="new"> Založit novou zakázku</label>
+            <input name="new_order_name" placeholder="Název nové zakázky">
+        </div>
+
         <button type="submit">Uložit pohyb</button>
     </form>
 </section>
+
+<script>
+function setType(type) {
+    document.getElementById('movement_type').value = type;
+    const box = document.getElementById('issue-box');
+    const btnIn = document.getElementById('btn-in');
+    const btnOut = document.getElementById('btn-out');
+    if (type === 'out') {
+        box.style.display = 'block';
+        btnOut.style.opacity = '1';
+        btnIn.style.opacity = '0.5';
+    } else {
+        box.style.display = 'none';
+        btnIn.style.opacity = '1';
+        btnOut.style.opacity = '0.5';
+    }
+}
+setType('in');
+</script>
 {% endblock %}

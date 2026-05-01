@@ -1,4 +1,5 @@
 import os
+import re
 from functools import wraps
 from io import BytesIO
 from datetime import datetime
@@ -9,6 +10,12 @@ from flask import Flask, render_template, request, redirect, url_for, send_file,
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 
 app = Flask(__name__)
@@ -58,6 +65,37 @@ class StockMovement(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
 
     material = db.relationship("Material", backref="movements")
+
+
+class JobOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_number = db.Column(db.String(20), unique=True, nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(20), default="active")
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    closed_at = db.Column(db.DateTime)
+
+
+class IssueSlip(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    slip_number = db.Column(db.String(30), unique=True, nullable=False)
+    order_number = db.Column(db.String(30), nullable=False)
+    order_name = db.Column(db.String(255), default="")
+    username = db.Column(db.String(80), default="")
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+
+class IssueSlipItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    issue_slip_id = db.Column(db.Integer, db.ForeignKey("issue_slip.id"), nullable=False)
+    material_id_db = db.Column(db.Integer)
+    material_code = db.Column(db.String(30), default="")
+    manufacturer_id = db.Column(db.String(100), default="")
+    material_name = db.Column(db.String(255), default="")
+    quantity = db.Column(db.Float, default=0)
+    unit = db.Column(db.String(50), default="")
+
+    issue_slip = db.relationship("IssueSlip", backref="items")
 
 
 # =========================
@@ -121,6 +159,77 @@ def generate_material_id():
     return f"JZ{max_number + 1:05d}"
 
 
+
+def generate_order_number():
+    prefix = datetime.now().strftime("%Y%m%d")
+    count = JobOrder.query.filter(JobOrder.order_number.startswith(prefix)).count() + 1
+    return f"{prefix}{count:02d}"
+
+
+def generate_issue_slip_number():
+    prefix = "VYD" + datetime.now().strftime("%Y%m%d")
+    count = IssueSlip.query.filter(IssueSlip.slip_number.startswith(prefix)).count() + 1
+    return f"{prefix}{count:02d}"
+
+
+def material_from_scan(value):
+    value = (value or "").strip()
+    if not value:
+        return None
+
+    match = re.search(r"/(?:movement|qr)/(\d+)", value)
+    if match:
+        return db.session.get(Material, int(match.group(1)))
+
+    if value.isdigit():
+        material = db.session.get(Material, int(value))
+        if material:
+            return material
+
+    return Material.query.filter_by(material_id=value).first()
+
+
+def build_issue_pdf(slip):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=15 * mm,
+        leftMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(f"Výdejka č. {slip.slip_number}", styles["Title"]),
+        Spacer(1, 8),
+        Paragraph(f"Zakázka: {slip.order_number} - {slip.order_name}", styles["Normal"]),
+        Paragraph(f"Vydal: {slip.username}", styles["Normal"]),
+        Paragraph(f"Datum: {slip.created_at.strftime('%d.%m.%Y %H:%M')}", styles["Normal"]),
+        Spacer(1, 12)
+    ]
+    data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+    for item in slip.items:
+        data.append([
+            item.material_code or "",
+            item.manufacturer_id or "",
+            item.material_name or "",
+            str(item.quantity or 0),
+            item.unit or ""
+        ])
+    table = Table(data, colWidths=[30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 def create_initial_users():
     if not User.query.filter_by(username="admin").first():
         db.session.add(User(
@@ -158,6 +267,14 @@ def ensure_db_columns():
             db.session.execute(text("ALTER TABLE stock_movement ADD COLUMN order_number VARCHAR(100) DEFAULT ''"))
         if "username" not in cols:
             db.session.execute(text("ALTER TABLE stock_movement ADD COLUMN username VARCHAR(80) DEFAULT ''"))
+
+    if "job_order" in tables:
+        cols = [c["name"] for c in inspector.get_columns("job_order")]
+        if "status" not in cols:
+            db.session.execute(text("ALTER TABLE job_order ADD COLUMN status VARCHAR(20) DEFAULT 'active'"))
+        if "closed_at" not in cols:
+            db.session.execute(text("ALTER TABLE job_order ADD COLUMN closed_at TIMESTAMP"))
+
     db.session.commit()
 
 
@@ -327,7 +444,8 @@ def movement(item_id):
     if request.method == "POST":
         movement_type = request.form.get("movement_type") or request.form.get("type")
         quantity = clean_float(request.form.get("quantity"))
-        order_number = request.form.get("order_number") or ""
+        issued_to = request.form.get("issued_to") or "internal"
+        order_number = ""
 
         if movement_type == "in":
             movement_type = "prijem"
@@ -340,7 +458,17 @@ def movement(item_id):
 
         if movement_type == "prijem":
             material.quantity += quantity
+
         elif movement_type == "vydej":
+            if issued_to == "internal":
+                order_number = "Vlastní spotřeba"
+            elif issued_to == "existing":
+                order_number = request.form.get("order_number") or ""
+            elif issued_to == "new":
+                order_name = request.form.get("new_order_name") or "Nová zakázka"
+                order_number = generate_order_number()
+                db.session.add(JobOrder(order_number=order_number, name=order_name, status="active"))
+
             if quantity > material.quantity:
                 flash("Nelze vyskladnit více, než je skladem.", "danger")
                 return redirect(url_for("movement", item_id=item_id))
@@ -360,7 +488,8 @@ def movement(item_id):
         flash("Pohyb byl uložen.", "success")
         return redirect(url_for("stock_card", item_id=item_id))
 
-    return render_template("move.html", item=material, material=material)
+    orders = JobOrder.query.filter_by(status="active").order_by(JobOrder.created_at.desc()).all()
+    return render_template("move.html", item=material, material=material, orders=orders)
 
 
 @app.route("/move/<int:item_id>", methods=["GET", "POST"])
@@ -477,6 +606,221 @@ def import_excel():
     db.session.commit()
     flash(f"Import dokončen. Přidáno: {imported}, aktualizováno: {updated}, přeskočeno: {skipped}.", "success")
     return redirect(url_for("index"))
+
+
+
+# =========================
+# ZAKÁZKY - ADMIN
+# =========================
+
+@app.route("/orders")
+@login_required
+@admin_required
+def orders():
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+    return render_template("orders.html", orders=orders)
+
+
+@app.route("/orders/new", methods=["GET", "POST"])
+@login_required
+@admin_required
+def order_new():
+    if request.method == "POST":
+        name = request.form.get("name") or "Nová zakázka"
+        order = JobOrder(order_number=generate_order_number(), name=name, status="active")
+        db.session.add(order)
+        db.session.commit()
+        flash(f"Zakázka {order.order_number} byla založena.", "success")
+        return redirect(url_for("orders"))
+
+    return render_template("order_form.html")
+
+
+@app.route("/orders/<int:order_id>/close", methods=["POST"])
+@login_required
+@admin_required
+def order_close(order_id):
+    order = JobOrder.query.get_or_404(order_id)
+    if order.status == "closed":
+        flash("Zakázka už je ukončená.", "warning")
+        return redirect(url_for("orders"))
+
+    order.status = "closed"
+    order.closed_at = datetime.now()
+    db.session.commit()
+    flash(f"Zakázka {order.order_number} byla ukončena.", "success")
+    return redirect(url_for("orders"))
+
+
+@app.route("/orders/<int:order_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def order_delete(order_id):
+    order = JobOrder.query.get_or_404(order_id)
+
+    used = StockMovement.query.filter_by(order_number=order.order_number).first()
+    issue = IssueSlip.query.filter_by(order_number=order.order_number).first()
+    if used or issue:
+        flash("Zakázku nelze smazat, protože už má pohyby nebo výdejky. Můžeš ji pouze ukončit.", "danger")
+        return redirect(url_for("orders"))
+
+    db.session.delete(order)
+    db.session.commit()
+    flash("Zakázka byla smazána.", "success")
+    return redirect(url_for("orders"))
+
+
+# =========================
+# VÝDEJKA DO ZAKÁZKY
+# =========================
+
+@app.route("/issue", methods=["GET", "POST"])
+@login_required
+def issue_slip_new():
+    if request.method == "POST":
+        order_number = request.form.get("order_number") or ""
+        order = JobOrder.query.filter_by(order_number=order_number, status="active").first()
+        if not order:
+            flash("Vyber existující aktivní zakázku.", "danger")
+            return redirect(url_for("issue_slip_new"))
+
+        session["issue_order_number"] = order.order_number
+        session["issue_order_name"] = order.name
+        session["issue_items"] = []
+        return redirect(url_for("issue_slip_edit"))
+
+    orders = JobOrder.query.filter_by(status="active").order_by(JobOrder.created_at.desc()).all()
+    return render_template("issue_new.html", orders=orders)
+
+
+@app.route("/issue/edit", methods=["GET", "POST"])
+@login_required
+def issue_slip_edit():
+    order_number = session.get("issue_order_number")
+    order_name = session.get("issue_order_name")
+    items = session.get("issue_items", [])
+
+    if not order_number:
+        flash("Nejprve vyber zakázku.", "warning")
+        return redirect(url_for("issue_slip_new"))
+
+    if request.method == "POST":
+        material = material_from_scan(request.form.get("scan_value"))
+        quantity = clean_float(request.form.get("quantity"))
+
+        if not material:
+            flash("Materiál nebyl nalezen.", "danger")
+            return redirect(url_for("issue_slip_edit"))
+
+        if quantity <= 0:
+            flash("Množství musí být větší než 0.", "danger")
+            return redirect(url_for("issue_slip_edit"))
+
+        if quantity > material.quantity:
+            flash(f"Nedostatek na skladě: {material.material_id} má skladem {material.quantity} {material.unit}", "danger")
+            return redirect(url_for("issue_slip_edit"))
+
+        items.append({
+            "material_db_id": material.id,
+            "material_code": material.material_id,
+            "manufacturer_id": material.manufacturer_id or "",
+            "name": material.name or "",
+            "quantity": quantity,
+            "unit": material.unit or ""
+        })
+        session["issue_items"] = items
+        flash("Položka přidána do výdejky.", "success")
+        return redirect(url_for("issue_slip_edit"))
+
+    return render_template("issue_edit.html", order_number=order_number, order_name=order_name, items=items)
+
+
+@app.route("/issue/remove/<int:index>", methods=["POST"])
+@login_required
+def issue_slip_remove(index):
+    items = session.get("issue_items", [])
+    if 0 <= index < len(items):
+        items.pop(index)
+        session["issue_items"] = items
+    return redirect(url_for("issue_slip_edit"))
+
+
+@app.route("/issue/confirm", methods=["POST"])
+@login_required
+def issue_slip_confirm():
+    order_number = session.get("issue_order_number")
+    order_name = session.get("issue_order_name")
+    items = session.get("issue_items", [])
+
+    if not order_number or not items:
+        flash("Výdejka nemá zakázku nebo položky.", "danger")
+        return redirect(url_for("issue_slip_new"))
+
+    order = JobOrder.query.filter_by(order_number=order_number, status="active").first()
+    if not order:
+        flash("Zakázka už není aktivní.", "danger")
+        return redirect(url_for("issue_slip_new"))
+
+    for item in items:
+        material = db.session.get(Material, item["material_db_id"])
+        if not material or item["quantity"] > material.quantity:
+            flash(f"Nedostatek nebo chybějící materiál {item['material_code']}", "danger")
+            return redirect(url_for("issue_slip_edit"))
+
+    slip = IssueSlip(
+        slip_number=generate_issue_slip_number(),
+        order_number=order_number,
+        order_name=order_name,
+        username=current_user().username
+    )
+    db.session.add(slip)
+    db.session.flush()
+
+    for item in items:
+        material = db.session.get(Material, item["material_db_id"])
+        quantity = clean_float(item["quantity"])
+        material.quantity -= quantity
+
+        db.session.add(StockMovement(
+            material_id=material.id,
+            movement_type="vydej",
+            quantity=quantity,
+            username=current_user().username,
+            order_number=order_number
+        ))
+
+        db.session.add(IssueSlipItem(
+            issue_slip_id=slip.id,
+            material_id_db=material.id,
+            material_code=material.material_id,
+            manufacturer_id=material.manufacturer_id or "",
+            material_name=material.name or "",
+            quantity=quantity,
+            unit=material.unit or ""
+        ))
+
+    db.session.commit()
+    session.pop("issue_order_number", None)
+    session.pop("issue_order_name", None)
+    session.pop("issue_items", None)
+
+    flash(f"Výdejka {slip.slip_number} vytvořena.", "success")
+    return redirect(url_for("issue_slip_detail", slip_id=slip.id))
+
+
+@app.route("/issue/<int:slip_id>")
+@login_required
+def issue_slip_detail(slip_id):
+    slip = IssueSlip.query.get_or_404(slip_id)
+    return render_template("issue_detail.html", slip=slip)
+
+
+@app.route("/issue/<int:slip_id>/pdf")
+@login_required
+def issue_slip_pdf(slip_id):
+    slip = IssueSlip.query.get_or_404(slip_id)
+    pdf = build_issue_pdf(slip)
+    return send_file(pdf, download_name=f"{slip.slip_number}.pdf", as_attachment=True, mimetype="application/pdf")
 
 
 # =========================

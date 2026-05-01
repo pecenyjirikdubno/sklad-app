@@ -1,51 +1,44 @@
 {% extends "base.html" %}
-
 {% block content %}
 <h2>Zakázky</h2>
 
-<p>
-    <a class="button-link" href="{{ url_for('order_new') }}">+ Založit zakázku</a>
-</p>
+<p><a class="button-link" href="{{ url_for('order_new') }}">+ Založit zakázku</a></p>
 
+<div class="table-wrap">
 <table>
-    <tr>
-        <th>Číslo zakázky</th>
-        <th>Název</th>
-        <th>Stav</th>
-        <th>Vytvořeno</th>
-        <th>Ukončeno</th>
-        <th>Akce</th>
-    </tr>
-
+    <thead>
+        <tr>
+            <th>Číslo zakázky</th>
+            <th>Název</th>
+            <th>Stav</th>
+            <th>Vytvořeno</th>
+            <th>Ukončeno</th>
+            <th>Akce</th>
+        </tr>
+    </thead>
+    <tbody>
     {% for order in orders %}
-    <tr>
-        <td>{{ order.order_number }}</td>
-        <td>{{ order.name }}</td>
-        <td>
-            {% if order.status == "closed" %}
-                Ukončená
-            {% else %}
-                Aktivní
-            {% endif %}
-        </td>
-        <td>{{ order.created_at.strftime("%d.%m.%Y %H:%M") if order.created_at else "" }}</td>
-        <td>{{ order.closed_at.strftime("%d.%m.%Y %H:%M") if order.closed_at else "" }}</td>
-        <td>
-            {% if order.status != "closed" %}
-            <form method="post" action="{{ url_for('order_close', order_id=order.id) }}" style="display:inline;">
-                <button type="submit">Ukončit</button>
-            </form>
-            {% endif %}
-
-            <form method="post" action="{{ url_for('order_delete', order_id=order.id) }}" style="display:inline;" onsubmit="return confirm('Opravdu smazat zakázku?')">
-                <button type="submit">Smazat</button>
-            </form>
-        </td>
-    </tr>
+        <tr>
+            <td>{{ order.order_number }}</td>
+            <td>{{ order.name }}</td>
+            <td>{{ 'Ukončená' if order.status == 'closed' else 'Aktivní' }}</td>
+            <td>{{ order.created_at.strftime('%d.%m.%Y %H:%M') if order.created_at else '' }}</td>
+            <td>{{ order.closed_at.strftime('%d.%m.%Y %H:%M') if order.closed_at else '' }}</td>
+            <td class="actions">
+                {% if order.status != 'closed' %}
+                <form method="post" action="{{ url_for('order_close', order_id=order.id) }}" style="display:inline;">
+                    <button type="submit">Ukončit</button>
+                </form>
+                {% endif %}
+                <form method="post" action="{{ url_for('order_delete', order_id=order.id) }}" style="display:inline;" onsubmit="return confirm('Opravdu smazat zakázku?')">
+                    <button type="submit">Smazat</button>
+                </form>
+            </td>
+        </tr>
     {% else %}
-    <tr><td colspan="6">Žádné zakázky.</td></tr>
+        <tr><td colspan="6">Žádné zakázky.</td></tr>
     {% endfor %}
+    </tbody>
 </table>
-
-<p><a href="{{ url_for('index') }}">Zpět</a></p>
+</div>
 {% endblock %}
