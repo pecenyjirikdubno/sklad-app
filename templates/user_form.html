@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ 'Upravit uživatele' if user else 'Nový uživatel' }}</h2>
+
+<form method="post" class="card-form">
+    <label>Uživatel<input name="username" value="{{ user.username if user else '' }}" required></label>
+
+    {% if not user %}
+        <label>Heslo<input type="password" name="password" required></label>
+    {% endif %}
+
+    <label>Role
+        <select name="role">
+            <option value="user" {% if user and user.role == 'user' %}selected{% endif %}>User</option>
+            <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+        </select>
+    </label>
+
+    <button type="submit">Uložit</button>
+</form>
+
+<p><a href="{{ url_for('users') }}">Zpět na uživatele</a></p>
+{% endblock %}

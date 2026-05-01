@@ -1,33 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-
 <h2>Uživatelé</h2>
 
-<a href="{{ url_for('user_new') }}" class="btn">+ Nový uživatel</a>
+<p><a class="button-link" href="{{ url_for('user_new') }}">+ Nový uživatel</a></p>
 
+<div class="table-wrap">
 <table>
-<tr>
-    <th>ID</th>
-    <th>Uživatel</th>
-    <th>Role</th>
-    <th>Akce</th>
-</tr>
-
-{% for u in users %}
-<tr>
-    <td>{{ u.id }}</td>
-    <td>{{ u.username }}</td>
-    <td>{{ u.role }}</td>
-    <td>
-        <a href="{{ url_for('user_edit', user_id=u.id) }}">Upravit</a>
-        <a href="{{ url_for('user_password', user_id=u.id) }}">Heslo</a>
-
-        <form method="post" action="{{ url_for('user_delete', user_id=u.id) }}" style="display:inline;">
-            <button onclick="return confirm('Smazat uživatele?')">Smazat</button>
-        </form>
-    </td>
-</tr>
-{% endfor %}
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Uživatel</th>
+            <th>Role</th>
+            <th>Akce</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for u in users %}
+        <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.username }}</td>
+            <td>{{ u.role }}</td>
+            <td class="actions">
+                <a href="{{ url_for('user_edit', user_id=u.id) }}">Upravit</a>
+                <a href="{{ url_for('user_password', user_id=u.id) }}">Heslo</a>
+                <form method="post" action="{{ url_for('user_delete', user_id=u.id) }}" onsubmit="return confirm('Opravdu smazat uživatele?')">
+                    <button type="submit">Smazat</button>
+                </form>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="4">Žádní uživatelé.</td></tr>
+    {% endfor %}
+    </tbody>
 </table>
-
+</div>
 {% endblock %}

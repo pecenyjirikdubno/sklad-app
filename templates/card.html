@@ -1,9 +1,45 @@
-{% extends "base.html" %}{% block content %}
-<section class="card-detail"><div>
-<h2>Skladová karta {{ item.material_id }}</h2><p><strong>{{ item.name }}</strong></p><p>ID výrobce: {{ item.manufacturer_id or '-' }}</p><p>Stav: <strong>{{ item.quantity }} {{ item.unit }}</strong></p><p>Cena bez DPH: {{ item.price_without_vat }}</p><p><a href="{{ url_for('move_item', item_id=item.id) }}">Zapsat příjem/výdej</a></p>
-</div><div class="qr-box"><img src="{{ url_for('qr_code', item_id=item.id) }}"></div></section>
+{% extends "base.html" %}
+{% block content %}
+<section class="card-detail">
+    <div>
+        <h2>Skladová karta {{ item.material_id }}</h2>
+        <p><strong>{{ item.name }}</strong></p>
+        <p>ID výrobce: {{ item.manufacturer_id or '-' }}</p>
+        <p>Stav: <strong>{{ item.quantity }} {{ item.unit }}</strong></p>
+        <p>Cena bez DPH: {{ item.price_without_vat }}</p>
+        <p><a class="button-link" href="{{ url_for('move_item', item_id=item.id) }}">Zapsat příjem/výdej</a></p>
+    </div>
+    <div class="qr-box">
+        <img src="{{ url_for('qr_code', item_id=item.id) }}" alt="QR {{ item.material_id }}">
+        <p class="muted">QR kód otevře mobilní formulář pro příjem/výdej.</p>
+    </div>
+</section>
+
 <h3>Pohyby na skladě</h3>
-<table><tr><th>Datum</th><th>Typ</th><th>Množství</th><th>Zakázka</th><th>Uživatel</th></tr>
-{% for m in movements %}<tr><td>{{ m.created_at.strftime('%d.%m.%Y %H:%M') if m.created_at else '' }}</td><td>{{ 'Příjem' if m.movement_type in ['in','prijem'] else 'Výdej' }}</td><td>{{ m.quantity }} {{ item.unit }}</td><td>{{ m.order_number or '-' }}</td><td>{{ m.username }}</td></tr>
-{% else %}<tr><td colspan="5">Zatím nejsou evidované žádné pohyby.</td></tr>{% endfor %}
-</table>{% endblock %}
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>Datum</th>
+            <th>Typ</th>
+            <th>Množství</th>
+            <th>Zakázka</th>
+            <th>Uživatel</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for m in movements %}
+        <tr>
+            <td>{{ m.created_at.strftime('%d.%m.%Y %H:%M') if m.created_at else '' }}</td>
+            <td>{{ 'Příjem' if m.movement_type == 'prijem' else 'Výdej' }}</td>
+            <td>{{ m.quantity }} {{ item.unit }}</td>
+            <td>{{ m.order_number or '-' }}</td>
+            <td>{{ m.username }}</td>
+        </tr>
+    {% else %}
+        <tr><td colspan="5">Zatím nejsou evidované žádné pohyby.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}
