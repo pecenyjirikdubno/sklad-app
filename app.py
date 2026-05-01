@@ -951,6 +951,21 @@ def user_delete(user_id):
     flash("Uživatel byl smazán.", "success")
     return redirect(url_for("users"))
 
+@app.route("/api/material_lookup")
+@login_required
+def material_lookup():
+    q = request.args.get("q", "")
+
+    material = material_from_scan(q)
+
+    if not material:
+        return {"found": False}
+
+    return {
+        "found": True,
+        "name": material.name,
+        "material_id": material.material_id
+    }
 
 # =========================
 # START
