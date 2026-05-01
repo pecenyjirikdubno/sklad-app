@@ -690,6 +690,28 @@ def order_delete(order_id):
 # VÝDEJKA DO ZAKÁZKY
 # =========================
 
+
+@app.route("/issues")
+@login_required
+@admin_required
+def issue_slip_list():
+    selected_order = request.args.get("order_number", "").strip()
+
+    query = IssueSlip.query
+
+    if selected_order:
+        query = query.filter_by(order_number=selected_order)
+
+    slips = query.order_by(IssueSlip.created_at.desc()).all()
+    orders = JobOrder.query.order_by(JobOrder.created_at.desc()).all()
+
+    return render_template(
+        "issue_list.html",
+        slips=slips,
+        orders=orders,
+        selected_order=selected_order
+    )
+
 @app.route("/issue", methods=["GET", "POST"])
 @login_required
 def issue_slip_new():
