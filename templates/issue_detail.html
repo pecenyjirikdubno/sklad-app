@@ -1,22 +1,49 @@
 {% extends "base.html" %}
 {% block content %}
+
+<div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <a class="button-link" href="{{ url_for('issue_slip_list') }}">← Zpět na výdejky</a>
+    <a class="button-link" href="{{ url_for('index') }}">Přehled skladu</a>
+</div>
+
 <h2>Výdejka {{ slip.slip_number }}</h2>
 <p><strong>Zakázka:</strong> {{ slip.order_number }} - {{ slip.order_name }}</p>
 <p><strong>Vydal:</strong> {{ slip.username }}</p>
 <p><strong>Datum:</strong> {{ slip.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
-<p>
+
+<p style="display: flex; gap: 8px; flex-wrap: wrap;">
     <a class="button-link" href="{{ url_for('issue_slip_pdf', slip_id=slip.id) }}">Stáhnout PDF</a>
     <a class="button-link" href="{{ url_for('issue_slip_pdf_qr', slip_id=slip.id) }}">Stáhnout PDF + QR kódy</a>
 </p>
 
 <div class="table-wrap">
 <table>
-    <thead><tr><th>ID Materiálu</th><th>ID výrobce</th><th>Název</th><th>Množství</th><th>Mn.j.</th></tr></thead>
+    <thead>
+        <tr>
+            <th>ID Materiálu</th>
+            <th>ID výrobce</th>
+            <th>Název</th>
+            <th>Množství</th>
+            <th>Mn.j.</th>
+        </tr>
+    </thead>
     <tbody>
     {% for item in slip.items %}
-        <tr><td>{{ item.material_code }}</td><td>{{ item.manufacturer_id }}</td><td>{{ item.material_name }}</td><td>{{ item.quantity }}</td><td>{{ item.unit }}</td></tr>
+        <tr>
+            <td>{{ item.material_code }}</td>
+            <td>{{ item.manufacturer_id }}</td>
+            <td>{{ item.material_name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.unit }}</td>
+        </tr>
     {% endfor %}
     </tbody>
 </table>
 </div>
+
+<div style="margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <a class="button-link" href="{{ url_for('issue_slip_list') }}">← Zpět na výdejky</a>
+    <button type="button" class="button-link" onclick="history.back()">Zpět o krok</button>
+</div>
+
 {% endblock %}
