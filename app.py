@@ -15,7 +15,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 
 
 app = Flask(__name__)
@@ -218,15 +218,15 @@ def material_from_scan(value):
     return Material.query.filter_by(material_id=value).first()
 
 
-def build_issue_pdf(slip):
+def build_issue_pdf(slip, include_qr=False, base_url=""):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=15 * mm,
-        leftMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm
     )
     styles = getSampleStyleSheet()
     story = [
@@ -237,21 +237,57 @@ def build_issue_pdf(slip):
         Paragraph(f"Datum: {slip.created_at.strftime('%d.%m.%Y %H:%M')}", styles["Normal"]),
         Spacer(1, 12)
     ]
-    data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+
+    if include_qr:
+        data = [["QR", "ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+    else:
+        data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+
+    qr_buffers = []
+
     for item in slip.items:
-        data.append([
-            item.material_code or "",
-            item.manufacturer_id or "",
-            item.material_name or "",
-            str(item.quantity or 0),
-            item.unit or ""
-        ])
-    table = Table(data, colWidths=[30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm])
+        if include_qr:
+            material_url = ""
+            if item.material_id_db:
+                material_url = base_url.rstrip("/") + url_for("movement", item_id=item.material_id_db)
+            else:
+                material_url = item.material_code or ""
+
+            qr_img = qrcode.make(material_url)
+            qr_buffer = BytesIO()
+            qr_img.save(qr_buffer, format="PNG")
+            qr_buffer.seek(0)
+            qr_buffers.append(qr_buffer)
+
+            data.append([
+                Image(qr_buffer, width=22 * mm, height=22 * mm),
+                item.material_code or "",
+                item.manufacturer_id or "",
+                Paragraph(item.material_name or "", styles["BodyText"]),
+                str(item.quantity or 0),
+                item.unit or ""
+            ])
+        else:
+            data.append([
+                item.material_code or "",
+                item.manufacturer_id or "",
+                item.material_name or "",
+                str(item.quantity or 0),
+                item.unit or ""
+            ])
+
+    if include_qr:
+        col_widths = [25 * mm, 27 * mm, 32 * mm, 68 * mm, 23 * mm, 15 * mm]
+    else:
+        col_widths = [30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm]
+
+    table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, -1), "CENTER"),
     ]))
     story.append(table)
     doc.build(story)
@@ -1016,8 +1052,16 @@ def issue_slip_detail(slip_id):
 @login_required
 def issue_slip_pdf(slip_id):
     slip = IssueSlip.query.get_or_404(slip_id)
-    pdf = build_issue_pdf(slip)
+    pdf = build_issue_pdf(slip, include_qr=False, base_url=request.host_url)
     return send_file(pdf, download_name=f"{slip.slip_number}.pdf", as_attachment=True, mimetype="application/pdf")
+
+
+@app.route("/issue/<int:slip_id>/pdf_qr")
+@login_required
+def issue_slip_pdf_qr(slip_id):
+    slip = IssueSlip.query.get_or_404(slip_id)
+    pdf = build_issue_pdf(slip, include_qr=True, base_url=request.host_url)
+    return send_file(pdf, download_name=f"{slip.slip_number}_QR.pdf", as_attachment=True, mimetype="application/pdf")
 
 
 # =========================

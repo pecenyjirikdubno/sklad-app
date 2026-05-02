@@ -4,7 +4,10 @@
 <p><strong>Zakázka:</strong> {{ slip.order_number }} - {{ slip.order_name }}</p>
 <p><strong>Vydal:</strong> {{ slip.username }}</p>
 <p><strong>Datum:</strong> {{ slip.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
-<p><a class="button-link" href="{{ url_for('issue_slip_pdf', slip_id=slip.id) }}">Stáhnout PDF</a></p>
+<p>
+    <a class="button-link" href="{{ url_for('issue_slip_pdf', slip_id=slip.id) }}">Stáhnout PDF</a>
+    <a class="button-link" href="{{ url_for('issue_slip_pdf_qr', slip_id=slip.id) }}">Stáhnout PDF + QR kódy</a>
+</p>
 
 <div class="table-wrap">
 <table>

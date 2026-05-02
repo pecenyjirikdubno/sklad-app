@@ -50,6 +50,8 @@
                 <a href="{{ url_for('issue_slip_detail', slip_id=slip.id) }}">Detail</a>
                 |
                 <a href="{{ url_for('issue_slip_pdf', slip_id=slip.id) }}">PDF</a>
+                |
+                <a href="{{ url_for('issue_slip_pdf_qr', slip_id=slip.id) }}">PDF + QR</a>
             </td>
         </tr>
     {% else %}
