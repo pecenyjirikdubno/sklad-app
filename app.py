@@ -203,6 +203,9 @@ def generate_receipt_slip_number():
 
 def material_from_scan(value):
     value = (value or "").strip()
+# ✅ podpora nového QR formátu
+    if value.startswith("MAT:"):
+    value = value.replace("MAT:", "")
     if not value:
         return None
 
@@ -247,13 +250,10 @@ def build_issue_pdf(slip, include_qr=False, base_url=""):
 
     for item in slip.items:
         if include_qr:
-            material_url = ""
-            if item.material_id_db:
-                material_url = base_url.rstrip("/") + url_for("movement", item_id=item.material_id_db)
-            else:
-                material_url = item.material_code or ""
+    # ✅ QR obsahuje přímo ID materiálu
+    qr_data = f"MAT:{item.material_code}"
 
-            qr_img = qrcode.make(material_url)
+    qr_img = qrcode.make(qr_data)
             qr_buffer = BytesIO()
             qr_img.save(qr_buffer, format="PNG")
             qr_buffer.seek(0)
