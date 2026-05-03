@@ -206,8 +206,8 @@ def material_from_scan(value):
 # ✅ podpora nového QR formátu
     if value.startswith("MAT:"):
     value = value.replace("MAT:", "")
-    if not value:
-        return None
+   # if not value:
+    #    return None
 
     match = re.search(r"/(?:movement|qr)/(\d+)", value)
     if match:
