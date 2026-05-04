@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Inventura č. {{ inventory.id }}</h2>
+
+<p><strong>Název:</strong> {{ inventory.name }}</p>
+<p><strong>Uživatel:</strong> {{ inventory.user.username if inventory.user else "" }}</p>
+<p><strong>Stav:</strong> {{ "Aktivní" if inventory.status == "active" else "Dokončená" }}</p>
+<p><strong>Vytvořeno:</strong> {{ inventory.created_at.strftime('%d.%m.%Y %H:%M') if inventory.created_at else "" }}</p>
+<p><strong>Dokončeno:</strong> {{ inventory.finished_at.strftime('%d.%m.%Y %H:%M') if inventory.finished_at else "" }}</p>
+
+<p style="display:flex; gap:8px; flex-wrap:wrap;">
+    <a class="button-link" href="{{ url_for('inventory_list') }}">← Zpět na inventury</a>
+    <a class="button-link" href="{{ url_for('inventory_pdf', inventory_id=inventory.id) }}">PDF</a>
+    <a class="button-link" href="{{ url_for('inventory_export', inventory_id=inventory.id) }}">Export XLS</a>
+</p>
+
+{% if inventory.status == "active" %}
+<form method="post" action="{{ url_for('inventory_close', inventory_id=inventory.id) }}" onsubmit="return confirm('Opravdu uzavřít inventuru?')">
+    <button type="submit">Uzavřít inventuru administrátorem</button>
+</form>
+{% endif %}
+
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>ID Materiálu</th>
+            <th>ID výrobce</th>
+            <th>Název</th>
+            <th>Systém</th>
+            <th>Realita</th>
+            <th>Rozdíl</th>
+            <th>Mn.j.</th>
+            <th>Skenováno</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for item in items %}
+        {% set diff = (item.real_qty or 0) - (item.system_qty or 0) %}
+        <tr {% if diff != 0 %}style="background:#fee2e2;"{% endif %}>
+            <td>{{ item.material_code }}</td>
+            <td>{{ item.manufacturer_id }}</td>
+            <td>{{ item.material_name }}</td>
+            <td>{{ item.system_qty }}</td>
+            <td>{{ item.real_qty }}</td>
+            <td>{{ diff }}</td>
+            <td>{{ item.unit }}</td>
+            <td>{{ item.scanned_at.strftime('%d.%m.%Y %H:%M') if item.scanned_at else "" }}</td>
+        </tr>
+    {% else %}
+        <tr><td colspan="8">Žádné položky.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

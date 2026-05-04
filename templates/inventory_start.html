@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Spustit inventuru</h2>
+
+<form method="post" class="card-form">
+    <label>
+        Název inventury
+        <input name="name" placeholder="Inventura {{ current_user.username }}">
+    </label>
+
+    <label>
+        Uživatel
+        <select name="user_id" required>
+            <option value="">Vyber uživatele</option>
+            {% for user in users %}
+                <option value="{{ user.id }}">{{ user.username }} ({{ user.role }})</option>
+            {% endfor %}
+        </select>
+    </label>
+
+    <button type="submit">Zpřístupnit inventuru</button>
+    <a class="button-link" href="{{ url_for('inventory_list') }}">Zpět</a>
+</form>
+
+{% endblock %}

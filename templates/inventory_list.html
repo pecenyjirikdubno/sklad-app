@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Inventury</h2>
+
+<p>
+    <a class="button-link" href="{{ url_for('inventory_start') }}">Spustit novou inventuru</a>
+    <a class="button-link" href="{{ url_for('index') }}">← Zpět na sklad</a>
+</p>
+
+<form method="get" class="card-form" style="margin-bottom: 18px;">
+    <label>
+        Stav
+        <select name="status">
+            <option value="">Všechny</option>
+            <option value="active" {% if selected_status == "active" %}selected{% endif %}>Aktivní</option>
+            <option value="done" {% if selected_status == "done" %}selected{% endif %}>Dokončené</option>
+        </select>
+    </label>
+    <button type="submit">Filtrovat</button>
+</form>
+
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Název</th>
+            <th>Uživatel</th>
+            <th>Stav</th>
+            <th>Vytvořeno</th>
+            <th>Dokončeno</th>
+            <th>Položek</th>
+            <th>Akce</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for inv in inventories %}
+        <tr>
+            <td>{{ inv.id }}</td>
+            <td>{{ inv.name }}</td>
+            <td>{{ inv.user.username if inv.user else "" }}</td>
+            <td>
+                {% if inv.status == "active" %}
+                    Aktivní
+                {% else %}
+                    Dokončená
+                {% endif %}
+            </td>
+            <td>{{ inv.created_at.strftime('%d.%m.%Y %H:%M') if inv.created_at else '' }}</td>
+            <td>{{ inv.finished_at.strftime('%d.%m.%Y %H:%M') if inv.finished_at else '' }}</td>
+            <td>{{ inv.items|length }}</td>
+            <td>
+                <a href="{{ url_for('inventory_detail', inventory_id=inv.id) }}">Detail</a>
+                |
+                <a href="{{ url_for('inventory_pdf', inventory_id=inv.id) }}">PDF</a>
+                |
+                <a href="{{ url_for('inventory_export', inventory_id=inv.id) }}">XLS</a>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="8">Žádné inventury.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

@@ -16,6 +16,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 
 app = Flask(__name__)
@@ -32,6 +34,17 @@ else:
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
+
+# Unicode font pro PDF výstupy s českou diakritikou.
+PDF_FONT_NAME = "Helvetica"
+try:
+    PDF_FONT_PATH = os.environ.get("PDF_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    pdfmetrics.registerFont(TTFont("DejaVuSans", PDF_FONT_PATH))
+    PDF_FONT_NAME = "DejaVuSans"
+except Exception:
+    # Lokálně na Windows nemusí cesta existovat; PDF se v tom případě vytvoří s implicitním fontem.
+    PDF_FONT_NAME = "Helvetica"
+
 
 
 # =========================
@@ -121,6 +134,35 @@ class ReceiptSlipItem(db.Model):
     receipt_slip = db.relationship("ReceiptSlip", backref="items")
 
 
+
+class InventorySession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), default="")
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    status = db.Column(db.String(20), default="active")  # active / done
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    finished_at = db.Column(db.DateTime)
+
+    user = db.relationship("User", backref="inventory_sessions")
+
+
+class InventoryItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    inventory_session_id = db.Column(db.Integer, db.ForeignKey("inventory_session.id"), nullable=False)
+    material_id_db = db.Column(db.Integer, db.ForeignKey("material.id"), nullable=False)
+    material_code = db.Column(db.String(30), default="")
+    manufacturer_id = db.Column(db.String(100), default="")
+    material_name = db.Column(db.String(255), default="")
+    system_qty = db.Column(db.Float, default=0)
+    real_qty = db.Column(db.Float, default=0)
+    unit = db.Column(db.String(50), default="")
+    username = db.Column(db.String(80), default="")
+    scanned_at = db.Column(db.DateTime, default=datetime.now)
+
+    inventory_session = db.relationship("InventorySession", backref="items")
+    material = db.relationship("Material")
+
+
 # =========================
 # AUTH
 # =========================
@@ -134,7 +176,14 @@ def current_user():
 
 @app.context_processor
 def inject_user():
-    return {"current_user": current_user()}
+    user = current_user()
+    active_inventory = None
+    if user:
+        active_inventory = InventorySession.query.filter_by(user_id=user.id, status="active").first()
+    return {
+        "current_user": user,
+        "active_inventory": active_inventory,
+    }
 
 
 def login_required(fn):
@@ -222,6 +271,76 @@ def material_from_scan(value):
     return Material.query.filter_by(material_id=value).first()
 
 
+
+def get_active_inventory(user_id):
+    return InventorySession.query.filter_by(user_id=user_id, status="active").first()
+
+
+def inventory_difference(item):
+    return clean_float(item.real_qty) - clean_float(item.system_qty)
+
+
+def build_inventory_pdf(inventory):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm
+    )
+
+    styles = getSampleStyleSheet()
+    for style_name in ["Title", "Normal", "BodyText"]:
+        styles[style_name].fontName = PDF_FONT_NAME
+
+    title = f"Inventura č. {inventory.id}"
+    worker = inventory.user.username if inventory.user else ""
+
+    story = [
+        Paragraph(title, styles["Title"]),
+        Spacer(1, 8),
+        Paragraph(f"Název: {inventory.name or ''}", styles["Normal"]),
+        Paragraph(f"Pracovník: {worker}", styles["Normal"]),
+        Paragraph(f"Stav: {'Dokončená' if inventory.status == 'done' else 'Aktivní'}", styles["Normal"]),
+        Paragraph(f"Vytvořeno: {inventory.created_at.strftime('%d.%m.%Y %H:%M') if inventory.created_at else ''}", styles["Normal"]),
+        Paragraph(f"Dokončeno: {inventory.finished_at.strftime('%d.%m.%Y %H:%M') if inventory.finished_at else ''}", styles["Normal"]),
+        Spacer(1, 12)
+    ]
+
+    data = [["ID Materiálu", "ID výrobce", "Název", "Systém", "Realita", "Rozdíl", "Mn.j."]]
+    for item in inventory.items:
+        diff = inventory_difference(item)
+        data.append([
+            item.material_code or "",
+            item.manufacturer_id or "",
+            Paragraph(item.material_name or "", styles["BodyText"]),
+            str(item.system_qty or 0),
+            str(item.real_qty or 0),
+            str(diff),
+            item.unit or "",
+        ])
+
+    table = Table(data, colWidths=[26 * mm, 32 * mm, 62 * mm, 20 * mm, 20 * mm, 20 * mm, 14 * mm], repeatRows=1)
+    table_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), PDF_FONT_NAME),
+        ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]
+
+    for row_index, item in enumerate(inventory.items, start=1):
+        if abs(inventory_difference(item)) > 0.000001:
+            table_style.append(("BACKGROUND", (0, row_index), (-1, row_index), colors.Color(1, 0.92, 0.92)))
+
+    table.setStyle(TableStyle(table_style))
+    story.append(table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 def build_issue_pdf(slip, include_qr=False, base_url=""):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -233,6 +352,8 @@ def build_issue_pdf(slip, include_qr=False, base_url=""):
         bottomMargin=12 * mm
     )
     styles = getSampleStyleSheet()
+    for style_name in ["Title", "Normal", "BodyText"]:
+        styles[style_name].fontName = PDF_FONT_NAME
     story = [
         Paragraph(f"Výdejka č. {slip.slip_number}", styles["Title"]),
         Spacer(1, 8),
@@ -287,7 +408,7 @@ def build_issue_pdf(slip, include_qr=False, base_url=""):
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (0, -1), "CENTER"),
     ]))
@@ -308,6 +429,8 @@ def build_receipt_pdf(slip):
         bottomMargin=15 * mm
     )
     styles = getSampleStyleSheet()
+    for style_name in ["Title", "Normal", "BodyText"]:
+        styles[style_name].fontName = PDF_FONT_NAME
 
     if slip.source_type == "return_from_order":
         source_text = f"Vratka ze zakázky: {slip.order_number} - {slip.order_name}"
@@ -337,7 +460,7 @@ def build_receipt_pdf(slip):
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     story.append(table)
@@ -1324,6 +1447,242 @@ def receipt_slip_pdf(receipt_id):
     return send_file(pdf, download_name=f"{slip.receipt_number}.pdf", as_attachment=True, mimetype="application/pdf")
 
 
+
+
+
+# =========================
+# INVENTURA
+# =========================
+
+@app.route("/inventories")
+@login_required
+@admin_required
+def inventory_list():
+    status = request.args.get("status", "").strip()
+    query = InventorySession.query
+
+    if status:
+        query = query.filter_by(status=status)
+
+    inventories = query.order_by(InventorySession.created_at.desc()).all()
+    return render_template("inventory_list.html", inventories=inventories, selected_status=status)
+
+
+@app.route("/inventories/start", methods=["GET", "POST"])
+@login_required
+@admin_required
+def inventory_start():
+    if request.method == "POST":
+        user_id = request.form.get("user_id")
+        user = db.session.get(User, int(user_id)) if user_id and str(user_id).isdigit() else None
+
+        if not user:
+            flash("Vyber platného uživatele.", "danger")
+            return redirect(url_for("inventory_start"))
+
+        existing = get_active_inventory(user.id)
+        if existing:
+            flash(f"Uživatel {user.username} už má aktivní inventuru.", "warning")
+            return redirect(url_for("inventory_list"))
+
+        inventory = InventorySession(
+            name=request.form.get("name") or f"Inventura {datetime.now().strftime('%d.%m.%Y')}",
+            user_id=user.id,
+            status="active"
+        )
+        db.session.add(inventory)
+        db.session.commit()
+
+        flash(f"Inventura byla zpřístupněna uživateli {user.username}.", "success")
+        return redirect(url_for("inventory_list"))
+
+    users = User.query.order_by(User.username.asc()).all()
+    return render_template("inventory_start.html", users=users)
+
+
+@app.route("/inventory", methods=["GET", "POST"])
+@login_required
+def inventory_user():
+    user = current_user()
+    inventory = get_active_inventory(user.id)
+
+    if not inventory:
+        flash("Nemáš aktivní inventuru.", "warning")
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        material = material_from_scan(request.form.get("scan_value"))
+        real_qty = clean_float(request.form.get("real_qty"))
+
+        if not material:
+            flash("Materiál nebyl nalezen.", "danger")
+            return redirect(url_for("inventory_user"))
+
+        existing = InventoryItem.query.filter_by(
+            inventory_session_id=inventory.id,
+            material_id_db=material.id
+        ).first()
+
+        if existing:
+            existing.real_qty = real_qty
+            existing.system_qty = material.quantity or 0
+            existing.scanned_at = datetime.now()
+        else:
+            db.session.add(InventoryItem(
+                inventory_session_id=inventory.id,
+                material_id_db=material.id,
+                material_code=material.material_id or "",
+                manufacturer_id=material.manufacturer_id or "",
+                material_name=material.name or "",
+                system_qty=material.quantity or 0,
+                real_qty=real_qty,
+                unit=material.unit or "",
+                username=user.username
+            ))
+
+        db.session.commit()
+        flash("Položka inventury byla uložena.", "success")
+        return redirect(url_for("inventory_user"))
+
+    items = InventoryItem.query.filter_by(inventory_session_id=inventory.id).order_by(InventoryItem.scanned_at.desc()).all()
+    return render_template("inventory_user.html", inventory=inventory, items=items)
+
+
+@app.route("/api/inventory/add", methods=["POST"])
+@login_required
+def api_inventory_add():
+    user = current_user()
+    inventory = get_active_inventory(user.id)
+
+    if not inventory:
+        return {"ok": False, "message": "Nemáš aktivní inventuru."}, 403
+
+    material = material_from_scan(request.form.get("scan_value"))
+    real_qty = clean_float(request.form.get("real_qty"))
+
+    if not material:
+        return {"ok": False, "message": "Materiál nebyl nalezen."}, 404
+
+    existing = InventoryItem.query.filter_by(
+        inventory_session_id=inventory.id,
+        material_id_db=material.id
+    ).first()
+
+    if existing:
+        existing.real_qty = real_qty
+        existing.system_qty = material.quantity or 0
+        existing.scanned_at = datetime.now()
+    else:
+        existing = InventoryItem(
+            inventory_session_id=inventory.id,
+            material_id_db=material.id,
+            material_code=material.material_id or "",
+            manufacturer_id=material.manufacturer_id or "",
+            material_name=material.name or "",
+            system_qty=material.quantity or 0,
+            real_qty=real_qty,
+            unit=material.unit or "",
+            username=user.username
+        )
+        db.session.add(existing)
+
+    db.session.commit()
+
+    items = InventoryItem.query.filter_by(inventory_session_id=inventory.id).order_by(InventoryItem.scanned_at.desc()).all()
+    return {
+        "ok": True,
+        "message": "Položka inventury byla uložena.",
+        "items": [{
+            "material_code": item.material_code,
+            "manufacturer_id": item.manufacturer_id,
+            "material_name": item.material_name,
+            "system_qty": item.system_qty,
+            "real_qty": item.real_qty,
+            "difference": inventory_difference(item),
+            "unit": item.unit,
+        } for item in items]
+    }
+
+
+@app.route("/inventory/finish", methods=["POST"])
+@login_required
+def inventory_finish():
+    user = current_user()
+    inventory = get_active_inventory(user.id)
+
+    if not inventory:
+        flash("Nemáš aktivní inventuru.", "warning")
+        return redirect(url_for("index"))
+
+    inventory.status = "done"
+    inventory.finished_at = datetime.now()
+    db.session.commit()
+
+    flash("Inventura byla dokončena.", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/inventories/<int:inventory_id>")
+@login_required
+@admin_required
+def inventory_detail(inventory_id):
+    inventory = InventorySession.query.get_or_404(inventory_id)
+    items = InventoryItem.query.filter_by(inventory_session_id=inventory.id).order_by(InventoryItem.material_code.asc()).all()
+    return render_template("inventory_detail.html", inventory=inventory, items=items)
+
+
+@app.route("/inventories/<int:inventory_id>/pdf")
+@login_required
+@admin_required
+def inventory_pdf(inventory_id):
+    inventory = InventorySession.query.get_or_404(inventory_id)
+    pdf = build_inventory_pdf(inventory)
+    return send_file(pdf, download_name=f"inventura_{inventory.id}.pdf", as_attachment=True, mimetype="application/pdf")
+
+
+@app.route("/inventories/<int:inventory_id>/export")
+@login_required
+@admin_required
+def inventory_export(inventory_id):
+    inventory = InventorySession.query.get_or_404(inventory_id)
+
+    data = []
+    for item in inventory.items:
+        data.append({
+            "ID Materiálu": item.material_code,
+            "ID výrobce": item.manufacturer_id,
+            "Název": item.material_name,
+            "Systémový stav": item.system_qty,
+            "Reálný stav": item.real_qty,
+            "Rozdíl": inventory_difference(item),
+            "Mn.j.": item.unit,
+            "Uživatel": inventory.user.username if inventory.user else "",
+            "Datum skenu": item.scanned_at.strftime("%d.%m.%Y %H:%M") if item.scanned_at else "",
+        })
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        pd.DataFrame(data).to_excel(writer, index=False, sheet_name="Inventura")
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=f"inventura_{inventory.id}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@app.route("/inventories/<int:inventory_id>/close", methods=["POST"])
+@login_required
+@admin_required
+def inventory_close(inventory_id):
+    inventory = InventorySession.query.get_or_404(inventory_id)
+    inventory.status = "done"
+    inventory.finished_at = inventory.finished_at or datetime.now()
+    db.session.commit()
+    flash("Inventura byla uzavřena administrátorem.", "success")
+    return redirect(url_for("inventory_detail", inventory_id=inventory.id))
 
 
 # =========================
