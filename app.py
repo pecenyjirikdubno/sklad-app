@@ -65,6 +65,7 @@ class Material(db.Model):
     name = db.Column(db.String(255), nullable=False)
     quantity = db.Column(db.Float, default=0)
     unit = db.Column(db.String(50), default="")
+    storage_position = db.Column(db.String(100), default="")
     price_without_vat = db.Column(db.Float, default=0)
 
 
@@ -107,6 +108,7 @@ class IssueSlipItem(db.Model):
     material_name = db.Column(db.String(255), default="")
     quantity = db.Column(db.Float, default=0)
     unit = db.Column(db.String(50), default="")
+    storage_position = db.Column(db.String(100), default="")
 
     issue_slip = db.relationship("IssueSlip", backref="items")
 
@@ -130,6 +132,7 @@ class ReceiptSlipItem(db.Model):
     material_name = db.Column(db.String(255), default="")
     quantity = db.Column(db.Float, default=0)
     unit = db.Column(db.String(50), default="")
+    storage_position = db.Column(db.String(100), default="")
 
     receipt_slip = db.relationship("ReceiptSlip", backref="items")
 
@@ -156,6 +159,7 @@ class InventoryItem(db.Model):
     system_qty = db.Column(db.Float, default=0)
     real_qty = db.Column(db.Float, default=0)
     unit = db.Column(db.String(50), default="")
+    storage_position = db.Column(db.String(100), default="")
     username = db.Column(db.String(80), default="")
     scanned_at = db.Column(db.DateTime, default=datetime.now)
 
@@ -309,20 +313,21 @@ def build_inventory_pdf(inventory):
         Spacer(1, 12)
     ]
 
-    data = [["ID Materiálu", "ID výrobce", "Název", "Systém", "Realita", "Rozdíl", "Mn.j."]]
+    data = [["ID Materiálu", "ID výrobce", "Název", "Skladová pozice", "Systém", "Realita", "Rozdíl", "Mn.j."]]
     for item in inventory.items:
         diff = inventory_difference(item)
         data.append([
             item.material_code or "",
             item.manufacturer_id or "",
             Paragraph(item.material_name or "", styles["BodyText"]),
+            item.storage_position or "",
             str(item.system_qty or 0),
             str(item.real_qty or 0),
             str(diff),
             item.unit or "",
         ])
 
-    table = Table(data, colWidths=[26 * mm, 32 * mm, 62 * mm, 20 * mm, 20 * mm, 20 * mm, 14 * mm], repeatRows=1)
+    table = Table(data, colWidths=[24 * mm, 28 * mm, 50 * mm, 28 * mm, 18 * mm, 18 * mm, 18 * mm, 12 * mm], repeatRows=1)
     table_style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
@@ -364,9 +369,9 @@ def build_issue_pdf(slip, include_qr=False, base_url=""):
     ]
 
     if include_qr:
-        data = [["QR", "ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+        data = [["QR", "ID Materiálu", "ID výrobce", "Název", "Skladová pozice", "Množství", "Mn.j."]]
     else:
-        data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+        data = [["ID Materiálu", "ID výrobce", "Název", "Skladová pozice", "Množství", "Mn.j."]]
 
     qr_buffers = []
 
@@ -387,6 +392,7 @@ def build_issue_pdf(slip, include_qr=False, base_url=""):
                 item.material_code or "",
                 item.manufacturer_id or "",
                 Paragraph(item.material_name or "", styles["BodyText"]),
+                item.storage_position or "",
                 str(item.quantity or 0),
                 item.unit or ""
             ])
@@ -395,19 +401,21 @@ def build_issue_pdf(slip, include_qr=False, base_url=""):
                 item.material_code or "",
                 item.manufacturer_id or "",
                 item.material_name or "",
+                item.storage_position or "",
                 str(item.quantity or 0),
                 item.unit or ""
             ])
 
     if include_qr:
-        col_widths = [25 * mm, 27 * mm, 32 * mm, 68 * mm, 23 * mm, 15 * mm]
+        col_widths = [22 * mm, 24 * mm, 28 * mm, 55 * mm, 30 * mm, 22 * mm, 14 * mm]
     else:
-        col_widths = [30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm]
+        col_widths = [28 * mm, 32 * mm, 62 * mm, 35 * mm, 22 * mm, 16 * mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), PDF_FONT_NAME),
         ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (0, -1), "CENTER"),
@@ -446,20 +454,22 @@ def build_receipt_pdf(slip):
         Spacer(1, 12)
     ]
 
-    data = [["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j."]]
+    data = [["ID Materiálu", "ID výrobce", "Název", "Skladová pozice", "Množství", "Mn.j."]]
     for item in slip.items:
         data.append([
             item.material_code or "",
             item.manufacturer_id or "",
             item.material_name or "",
+            item.storage_position or "",
             str(item.quantity or 0),
             item.unit or ""
         ])
 
-    table = Table(data, colWidths=[30 * mm, 35 * mm, 70 * mm, 25 * mm, 20 * mm])
+    table = Table(data, colWidths=[28 * mm, 32 * mm, 62 * mm, 35 * mm, 22 * mm, 16 * mm])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), PDF_FONT_NAME),
         ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
@@ -497,6 +507,8 @@ def ensure_db_columns():
             db.session.execute(text("ALTER TABLE material ADD COLUMN manufacturer_id VARCHAR(100) DEFAULT ''"))
         if "unit" not in cols:
             db.session.execute(text("ALTER TABLE material ADD COLUMN unit VARCHAR(50) DEFAULT ''"))
+        if "storage_position" not in cols:
+            db.session.execute(text("ALTER TABLE material ADD COLUMN storage_position VARCHAR(100) DEFAULT ''"))
         if "price_without_vat" not in cols:
             db.session.execute(text("ALTER TABLE material ADD COLUMN price_without_vat FLOAT DEFAULT 0"))
 
@@ -513,6 +525,21 @@ def ensure_db_columns():
             db.session.execute(text("ALTER TABLE job_order ADD COLUMN status VARCHAR(20) DEFAULT 'active'"))
         if "closed_at" not in cols:
             db.session.execute(text("ALTER TABLE job_order ADD COLUMN closed_at TIMESTAMP"))
+
+    if "issue_slip_item" in tables:
+        cols = [c["name"] for c in inspector.get_columns("issue_slip_item")]
+        if "storage_position" not in cols:
+            db.session.execute(text("ALTER TABLE issue_slip_item ADD COLUMN storage_position VARCHAR(100) DEFAULT ''"))
+
+    if "receipt_slip_item" in tables:
+        cols = [c["name"] for c in inspector.get_columns("receipt_slip_item")]
+        if "storage_position" not in cols:
+            db.session.execute(text("ALTER TABLE receipt_slip_item ADD COLUMN storage_position VARCHAR(100) DEFAULT ''"))
+
+    if "inventory_item" in tables:
+        cols = [c["name"] for c in inspector.get_columns("inventory_item")]
+        if "storage_position" not in cols:
+            db.session.execute(text("ALTER TABLE inventory_item ADD COLUMN storage_position VARCHAR(100) DEFAULT ''"))
 
     db.session.commit()
 
@@ -534,6 +561,13 @@ def normalize_column_name(col):
         "mn.j": "mn.j.",
         "mn. j.": "mn.j.",
         "jednotka": "mn.j.",
+        "pozice": "skladová pozice",
+        "skladova pozice": "skladová pozice",
+        "skladove misto": "skladová pozice",
+        "skladové místo": "skladová pozice",
+        "umisteni": "skladová pozice",
+        "umístění": "skladová pozice",
+        "lokace": "skladová pozice",
         "cena": "cena bez dph",
         "pořizovací cena bez dph": "cena bez dph",
         "porizovaci cena bez dph": "cena bez dph",
@@ -549,6 +583,7 @@ def normalize_dataframe_columns(df):
         "název": "Název",
         "množství": "Množství",
         "mn.j.": "Mn.j.",
+        "skladová pozice": "Skladová pozice",
         "cena bez dph": "Cena bez DPH",
     })
 
@@ -617,6 +652,7 @@ def add_material():
             name=request.form.get("name") or "",
             quantity=clean_float(request.form.get("quantity")),
             unit=request.form.get("unit") or "",
+            storage_position=request.form.get("storage_position") or "",
             price_without_vat=clean_float(request.form.get("price_without_vat")),
         )
         db.session.add(item)
@@ -646,6 +682,7 @@ def edit_item(item_id):
         material.name = request.form.get("name") or ""
         material.quantity = clean_float(request.form.get("quantity"))
         material.unit = request.form.get("unit") or ""
+        material.storage_position = request.form.get("storage_position") or ""
         material.price_without_vat = clean_float(request.form.get("price_without_vat"))
         db.session.commit()
         flash("Materiál byl upraven.", "success")
@@ -743,7 +780,8 @@ def material_lookup():
     return {
         "found": True,
         "name": material.name,
-        "material_id": material.material_id
+        "material_id": material.material_id,
+        "storage_position": material.storage_position or ""
     }
 
 
@@ -775,6 +813,7 @@ def export_excel():
         "Název": m.name or "",
         "Množství": m.quantity or 0,
         "Mn.j.": m.unit or "",
+        "Skladová pozice": m.storage_position or "",
         "Cena bez DPH": m.price_without_vat or 0,
     } for m in Material.query.order_by(Material.material_id.asc()).all()]
 
@@ -795,7 +834,7 @@ def export_excel():
 @login_required
 @admin_required
 def import_template():
-    df = pd.DataFrame(columns=["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j.", "Cena bez DPH"])
+    df = pd.DataFrame(columns=["ID Materiálu", "ID výrobce", "Název", "Množství", "Mn.j.", "Skladová pozice", "Cena bez DPH"])
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Sklad")
@@ -847,6 +886,7 @@ def import_excel():
             "name": name,
             "quantity": clean_float(row.get("Množství")),
             "unit": "" if pd.isna(row.get("Mn.j.")) else str(row.get("Mn.j.")).strip(),
+            "storage_position": "" if pd.isna(row.get("Skladová pozice")) else str(row.get("Skladová pozice")).strip(),
             "price_without_vat": clean_float(row.get("Cena bez DPH")),
         }
 
@@ -1018,7 +1058,8 @@ def issue_slip_edit():
                 "manufacturer_id": material.manufacturer_id or "",
                 "name": material.name or "",
                 "quantity": quantity,
-                "unit": material.unit or ""
+                "unit": material.unit or "",
+                "storage_position": material.storage_position or ""
             })
 
         session["issue_items"] = items
@@ -1073,7 +1114,8 @@ def api_issue_add():
             "manufacturer_id": material.manufacturer_id or "",
             "name": material.name or "",
             "quantity": quantity,
-            "unit": material.unit or ""
+            "unit": material.unit or "",
+            "storage_position": material.storage_position or ""
         })
 
     session["issue_items"] = items
@@ -1154,7 +1196,8 @@ def issue_slip_confirm():
             manufacturer_id=material.manufacturer_id or "",
             material_name=material.name or "",
             quantity=quantity,
-            unit=material.unit or ""
+            unit=material.unit or "",
+            storage_position=material.storage_position or ""
         ))
 
     db.session.commit()
@@ -1281,7 +1324,8 @@ def receipt_slip_edit():
                 "manufacturer_id": material.manufacturer_id or "",
                 "name": material.name or "",
                 "quantity": quantity,
-                "unit": material.unit or ""
+                "unit": material.unit or "",
+                "storage_position": material.storage_position or ""
             })
 
         session["receipt_items"] = items
@@ -1326,7 +1370,8 @@ def api_receipt_add():
             "manufacturer_id": material.manufacturer_id or "",
             "name": material.name or "",
             "quantity": quantity,
-            "unit": material.unit or ""
+            "unit": material.unit or "",
+            "storage_position": material.storage_position or ""
         })
 
     session["receipt_items"] = items
@@ -1417,7 +1462,8 @@ def receipt_slip_confirm():
             manufacturer_id=material.manufacturer_id or "",
             material_name=material.name or "",
             quantity=quantity,
-            unit=material.unit or ""
+            unit=material.unit or "",
+            storage_position=material.storage_position or ""
         ))
 
     db.session.commit()
@@ -1518,6 +1564,8 @@ def inventory_user():
             flash("Materiál nebyl nalezen.", "danger")
             return redirect(url_for("inventory_user"))
 
+        storage_position = (request.form.get("storage_position") or material.storage_position or "").strip()
+
         existing = InventoryItem.query.filter_by(
             inventory_session_id=inventory.id,
             material_id_db=material.id
@@ -1526,6 +1574,7 @@ def inventory_user():
         if existing:
             existing.real_qty = real_qty
             existing.system_qty = material.quantity or 0
+            existing.storage_position = storage_position
             existing.scanned_at = datetime.now()
         else:
             db.session.add(InventoryItem(
@@ -1537,6 +1586,7 @@ def inventory_user():
                 system_qty=material.quantity or 0,
                 real_qty=real_qty,
                 unit=material.unit or "",
+                storage_position=storage_position,
                 username=user.username
             ))
 
@@ -1559,6 +1609,7 @@ def api_inventory_add():
 
     material = material_from_scan(request.form.get("scan_value"))
     real_qty = clean_float(request.form.get("real_qty"))
+    storage_position = (request.form.get("storage_position") or (material.storage_position if material else "") or "").strip()
 
     if not material:
         return {"ok": False, "message": "Materiál nebyl nalezen."}, 404
@@ -1571,6 +1622,7 @@ def api_inventory_add():
     if existing:
         existing.real_qty = real_qty
         existing.system_qty = material.quantity or 0
+        existing.storage_position = storage_position
         existing.scanned_at = datetime.now()
     else:
         existing = InventoryItem(
@@ -1582,6 +1634,7 @@ def api_inventory_add():
             system_qty=material.quantity or 0,
             real_qty=real_qty,
             unit=material.unit or "",
+            storage_position=storage_position,
             username=user.username
         )
         db.session.add(existing)
@@ -1596,6 +1649,7 @@ def api_inventory_add():
             "material_code": item.material_code,
             "manufacturer_id": item.manufacturer_id,
             "material_name": item.material_name,
+            "storage_position": item.storage_position,
             "system_qty": item.system_qty,
             "real_qty": item.real_qty,
             "difference": inventory_difference(item),
@@ -1652,6 +1706,7 @@ def inventory_export(inventory_id):
             "ID Materiálu": item.material_code,
             "ID výrobce": item.manufacturer_id,
             "Název": item.material_name,
+            "Skladová pozice": item.storage_position,
             "Systémový stav": item.system_qty,
             "Reálný stav": item.real_qty,
             "Rozdíl": inventory_difference(item),

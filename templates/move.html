@@ -4,6 +4,7 @@
     <h2>Pohyb materiálu</h2>
     <p><strong>{{ item.material_id }}</strong> — {{ item.name }}</p>
     <p>Aktuálně skladem: <strong>{{ item.quantity }} {{ item.unit }}</strong></p>
+    <p>Skladová pozice: <strong>{{ item.storage_position or '-' }}</strong></p>
 
     <form method="post" class="card-form">
         <input type="hidden" name="type" id="movement_type" value="in">

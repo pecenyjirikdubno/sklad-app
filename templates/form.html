@@ -9,6 +9,7 @@
     <label>Název<input name="name" required value="{{ item.name if item else '' }}"></label>
     <label>Množství<input name="quantity" type="number" step="0.001" value="{{ item.quantity if item else '0' }}"></label>
     <label>Mn.j.<input name="unit" required placeholder="ks, m, kg..." value="{{ item.unit if item else '' }}"></label>
+    <label>Skladová pozice<input name="storage_position" placeholder="např. Regál A-01" value="{{ item.storage_position if item else '' }}"></label>
     <label>Pořizovací cena bez DPH<input name="price_without_vat" type="number" step="0.01" value="{{ item.price_without_vat if item else '0' }}"></label>
     <button type="submit">Uložit</button>
 </form>

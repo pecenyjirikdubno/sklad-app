@@ -23,6 +23,7 @@
             <th>ID Materiálu</th>
             <th>ID výrobce</th>
             <th>Název</th>
+            <th>Skladová pozice</th>
             <th>Množství</th>
             <th>Mn.j.</th>
         </tr>
@@ -33,6 +34,7 @@
             <td>{{ item.material_code }}</td>
             <td>{{ item.manufacturer_id }}</td>
             <td>{{ item.material_name }}</td>
+            <td>{{ item.storage_position or '' }}</td>
             <td>{{ item.quantity }}</td>
             <td>{{ item.unit }}</td>
         </tr>

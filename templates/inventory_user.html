@@ -26,6 +26,11 @@
         <input id="real_qty_input" type="number" step="0.001" min="0" name="real_qty" required>
     </label>
 
+    <label>
+        Skladová pozice
+        <input id="storage_position_input" name="storage_position" placeholder="např. Regál A-01">
+    </label>
+
     <button type="submit">Uložit položku</button>
 </form>
 
@@ -40,6 +45,7 @@
             <th>ID Materiálu</th>
             <th>ID výrobce</th>
             <th>Název</th>
+            <th>Skladová pozice</th>
             <th>Systém</th>
             <th>Realita</th>
             <th>Rozdíl</th>
@@ -53,13 +59,14 @@
             <td>{{ item.material_code }}</td>
             <td>{{ item.manufacturer_id }}</td>
             <td>{{ item.material_name }}</td>
+            <td>{{ item.storage_position or '' }}</td>
             <td>{{ item.system_qty }}</td>
             <td>{{ item.real_qty }}</td>
             <td>{{ diff }}</td>
             <td>{{ item.unit }}</td>
         </tr>
     {% else %}
-        <tr id="empty-row"><td colspan="7">Zatím nejsou zadané žádné položky.</td></tr>
+        <tr id="empty-row"><td colspan="8">Zatím nejsou zadané žádné položky.</td></tr>
     {% endfor %}
     </tbody>
 </table>
@@ -94,8 +101,12 @@ async function loadMaterialPreview(value) {
         const data = await response.json();
 
         if (data.found) {
-            preview.innerHTML = "📦 " + data.name + " (" + data.material_id + ")";
+            preview.innerHTML = "📦 " + data.name + " (" + data.material_id + ")" + (data.storage_position ? " – pozice: " + data.storage_position : "");
             preview.style.color = "green";
+            const positionInput = document.getElementById("storage_position_input");
+            if (positionInput && !positionInput.value && data.storage_position) {
+                positionInput.value = data.storage_position;
+            }
         } else {
             preview.innerHTML = "❌ Materiál nenalezen";
             preview.style.color = "red";
@@ -110,7 +121,7 @@ function renderItems(items) {
     const tbody = document.getElementById("inventory-items-body");
 
     if (!items || items.length === 0) {
-        tbody.innerHTML = '<tr id="empty-row"><td colspan="7">Zatím nejsou zadané žádné položky.</td></tr>';
+        tbody.innerHTML = '<tr id="empty-row"><td colspan="8">Zatím nejsou zadané žádné položky.</td></tr>';
         return;
     }
 
@@ -122,6 +133,7 @@ function renderItems(items) {
                 <td>${item.material_code || ""}</td>
                 <td>${item.manufacturer_id || ""}</td>
                 <td>${item.material_name || ""}</td>
+                <td>${item.storage_position || ""}</td>
                 <td>${item.system_qty || 0}</td>
                 <td>${item.real_qty || 0}</td>
                 <td>${diff}</td>
@@ -136,10 +148,12 @@ async function saveInventoryItem(event) {
 
     const scanInput = document.getElementById("scan_input");
     const qtyInput = document.getElementById("real_qty_input");
+    const positionInput = document.getElementById("storage_position_input");
 
     const formData = new FormData();
     formData.append("scan_value", scanInput.value);
     formData.append("real_qty", qtyInput.value);
+    formData.append("storage_position", positionInput.value);
 
     try {
         const response = await fetch("/api/inventory/add", {
@@ -159,6 +173,7 @@ async function saveInventoryItem(event) {
 
         scanInput.value = "";
         qtyInput.value = "";
+        positionInput.value = "";
         document.getElementById("material_preview").innerHTML = "";
         scanInput.focus();
     } catch (error) {

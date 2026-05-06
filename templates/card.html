@@ -6,6 +6,7 @@
         <p><strong>{{ item.name }}</strong></p>
         <p>ID výrobce: {{ item.manufacturer_id or '-' }}</p>
         <p>Stav: <strong>{{ item.quantity }} {{ item.unit }}</strong></p>
+        <p>Skladová pozice: <strong>{{ item.storage_position or '-' }}</strong></p>
         <p>Cena bez DPH: {{ item.price_without_vat }}</p>
         <p><a class="button-link" href="{{ url_for('move_item', item_id=item.id) }}">Zapsat příjem/výdej</a></p>
     </div>

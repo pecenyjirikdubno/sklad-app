@@ -45,6 +45,7 @@
             <th>ID Materiálu</th>
             <th>ID výrobce</th>
             <th>Název</th>
+            <th>Skladová pozice</th>
             <th>Množství</th>
             <th>Mn.j.</th>
             <th>Akce</th>
@@ -56,6 +57,7 @@
             <td>{{ item.material_code }}</td>
             <td>{{ item.manufacturer_id }}</td>
             <td>{{ item.name }}</td>
+            <td>{{ item.storage_position or '' }}</td>
             <td>{{ item.quantity }}</td>
             <td>{{ item.unit }}</td>
             <td>
@@ -65,7 +67,7 @@
             </td>
         </tr>
     {% else %}
-        <tr id="empty-row"><td colspan="6">Zatím nejsou přidané žádné položky.</td></tr>
+        <tr id="empty-row"><td colspan="7">Zatím nejsou přidané žádné položky.</td></tr>
     {% endfor %}
     </tbody>
 </table>
@@ -100,7 +102,7 @@ async function loadMaterialPreview(value) {
         const data = await response.json();
 
         if (data.found) {
-            preview.innerHTML = "📦 " + data.name + " (" + data.material_id + ")";
+            preview.innerHTML = "📦 " + data.name + " (" + data.material_id + ")" + (data.storage_position ? " – pozice: " + data.storage_position : "");
             preview.style.color = "green";
         } else {
             preview.innerHTML = "❌ Materiál nenalezen";
@@ -117,7 +119,7 @@ function renderItems(items) {
     const confirmForm = document.getElementById("confirm-form");
 
     if (!items || items.length === 0) {
-        tbody.innerHTML = '<tr id="empty-row"><td colspan="6">Zatím nejsou přidané žádné položky.</td></tr>';
+        tbody.innerHTML = '<tr id="empty-row"><td colspan="7">Zatím nejsou přidané žádné položky.</td></tr>';
         confirmForm.style.display = "none";
         return;
     }
@@ -127,6 +129,7 @@ function renderItems(items) {
             <td>${item.material_code || ""}</td>
             <td>${item.manufacturer_id || ""}</td>
             <td>${item.name || ""}</td>
+            <td>${item.storage_position || ""}</td>
             <td>${item.quantity || 0}</td>
             <td>${item.unit || ""}</td>
             <td>

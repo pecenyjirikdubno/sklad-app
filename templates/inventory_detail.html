@@ -28,6 +28,7 @@
             <th>ID Materiálu</th>
             <th>ID výrobce</th>
             <th>Název</th>
+            <th>Skladová pozice</th>
             <th>Systém</th>
             <th>Realita</th>
             <th>Rozdíl</th>
@@ -42,6 +43,7 @@
             <td>{{ item.material_code }}</td>
             <td>{{ item.manufacturer_id }}</td>
             <td>{{ item.material_name }}</td>
+            <td>{{ item.storage_position or '' }}</td>
             <td>{{ item.system_qty }}</td>
             <td>{{ item.real_qty }}</td>
             <td>{{ diff }}</td>
@@ -49,7 +51,7 @@
             <td>{{ item.scanned_at.strftime('%d.%m.%Y %H:%M') if item.scanned_at else "" }}</td>
         </tr>
     {% else %}
-        <tr><td colspan="8">Žádné položky.</td></tr>
+        <tr><td colspan="9">Žádné položky.</td></tr>
     {% endfor %}
     </tbody>
 </table>

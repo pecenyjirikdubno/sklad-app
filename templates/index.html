@@ -13,6 +13,7 @@
             <th>Název</th>
             <th>Množství</th>
             <th>Mn.j.</th>
+            <th>Skladová pozice</th>
             <th>Cena bez DPH</th>
             <th>QR</th>
             <th>Akce</th>
@@ -26,6 +27,7 @@
             <td>{{ item.name }}</td>
             <td>{{ item.quantity }}</td>
             <td>{{ item.unit }}</td>
+            <td>{{ item.storage_position or '-' }}</td>
             <td>{{ item.price_without_vat }}</td>
             <td><img class="qr-small" src="{{ url_for('qr_code', item_id=item.id) }}" alt="QR {{ item.material_id }}"></td>
             <td class="actions">
@@ -40,7 +42,7 @@
             </td>
         </tr>
     {% else %}
-        <tr><td colspan="8">Zatím nejsou vložené žádné položky.</td></tr>
+        <tr><td colspan="9">Zatím nejsou vložené žádné položky.</td></tr>
     {% endfor %}
     </tbody>
 </table>
